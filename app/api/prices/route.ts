@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { simulatePrice, type NearbyPlaceSummary } from "@/lib/priceSimulator";
+import { estimatePrice } from "@/lib/priceSimulator";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { lat, lng, nearby } = body;
+    const { lat, lng } = body;
 
     if (lat == null || lng == null) {
       return NextResponse.json(
@@ -13,18 +13,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const summary: NearbyPlaceSummary = nearby || {
-      restaurants: 0,
-      schools: 0,
-      hospitals: 0,
-      malls: 0,
-      mosques: 0,
-      parks: 0,
-      banks: 0,
-    };
-
-    const estimate = simulatePrice({ lat, lng }, summary);
-
+    const estimate = estimatePrice({ lat, lng });
     return NextResponse.json(estimate);
   } catch {
     return NextResponse.json(
