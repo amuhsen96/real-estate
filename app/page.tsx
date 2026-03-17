@@ -16,6 +16,7 @@ interface Category {
     name: string;
     vicinity: string;
     rating: number | null;
+    distance: number | null;
   }[];
 }
 
@@ -27,6 +28,7 @@ export default function Home() {
   const [isNearbyLoading, setIsNearbyLoading] = useState(false);
   const [isPriceLoading, setIsPriceLoading] = useState(false);
   const [error, setError] = useState("");
+  const [apiError, setApiError] = useState("");
 
   const handleSearch = async (coords: Coordinates) => {
     setCoordinates(coords);
@@ -34,6 +36,7 @@ export default function Home() {
     setIsNearbyLoading(true);
     setIsPriceLoading(true);
     setError("");
+    setApiError("");
     setCategories([]);
     setPriceEstimate(null);
 
@@ -56,6 +59,7 @@ export default function Home() {
 
       const nearbyData = await nearbyRes.json();
       setCategories(nearbyData.categories);
+      if (nearbyData.apiError) setApiError(nearbyData.apiError);
       setIsNearbyLoading(false);
 
       // Fetch price estimates using nearby data
@@ -92,6 +96,17 @@ export default function Home() {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-2xl text-center">
             {error}
+          </div>
+        )}
+
+        {/* API Key / Google Error */}
+        {apiError && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 px-6 py-4 rounded-2xl text-sm">
+            <p className="font-semibold mb-1">⚠️ تعذّر الحصول على بيانات الأنشطة المحيطة</p>
+            <p className="text-xs text-amber-700 font-mono break-all">{apiError}</p>
+            <p className="text-xs text-amber-600 mt-2">
+              تأكد من تفعيل <strong>Places API</strong> في مشروع Google Cloud وتفعيل الفوترة (Billing).
+            </p>
           </div>
         )}
 
