@@ -18,35 +18,70 @@ interface CategoryResult {
     name: string;
     vicinity: string;
     rating: number | null;
+    distance: number | null;
   }[];
 }
 
 const CATEGORIES = [
-  { type: "restaurant", ar: "مطاعم وكافيهات", icon: "🍽️" },
-  { type: "shopping_mall", ar: "مراكز تجارية", icon: "🛍️" },
-  { type: "school", ar: "مدارس وجامعات", icon: "🎓" },
-  { type: "hospital", ar: "مستشفيات وصيدليات", icon: "🏥" },
-  { type: "mosque", ar: "مساجد", icon: "🕌" },
-  { type: "park", ar: "حدائق ومتنزهات", icon: "🌳" },
-  { type: "bank", ar: "بنوك", icon: "🏦" },
-  { type: "gas_station", ar: "محطات وقود", icon: "⛽" },
-  { type: "supermarket", ar: "سوبرماركت", icon: "🛒" },
-  { type: "pharmacy", ar: "صيدليات", icon: "💊" },
+  { type: "restaurant", keyword: null, ar: "مطاعم وكافيهات", icon: "🍽️" },
+  { type: "shopping_mall", keyword: null, ar: "مراكز تجارية", icon: "🛍️" },
+  { type: "school", keyword: null, ar: "مدارس وجامعات", icon: "🎓" },
+  { type: "hospital", keyword: null, ar: "مستشفيات وصيدليات", icon: "🏥" },
+  { type: "place_of_worship", keyword: "mosque", ar: "مساجد", icon: "🕌" },
+  { type: "park", keyword: null, ar: "حدائق ومتنزهات", icon: "🌳" },
+  { type: "bank", keyword: null, ar: "بنوك", icon: "🏦" },
+  { type: "gas_station", keyword: null, ar: "محطات وقود", icon: "⛽" },
+  { type: "supermarket", keyword: null, ar: "سوبرماركت", icon: "🛒" },
+  { type: "pharmacy", keyword: null, ar: "صيدليات", icon: "💊" },
 ];
+
+// Search at max radius; UI handles zoom filtering by distance
+const MAX_RADIUS = 5000;
+
+function calcDistance(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6371000;
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const dphi = ((lat2 - lat1) * Math.PI) / 180;
+  const dlambda = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dphi / 2) ** 2 +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(dlambda / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 async function searchNearby(
   lat: number,
   lng: number,
   type: string,
+  keyword: string | null,
   apiKey: string
 ): Promise<PlaceResult[]> {
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=3000&type=${type}&language=ar&key=${apiKey}`;
+  let url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${MAX_RADIUS}&type=${type}&language=ar&key=${apiKey}`;
+  if (keyword) {
+    url += `&keyword=${encodeURIComponent(keyword)}`;
+  }
 
-  const response = await fetch(url);
-  if (!response.ok) return [];
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
 
-  const data = await response.json();
-  return data.results || [];
+    const data = await response.json();
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      console.error(
+        `Places API error for type=${type}: ${data.status}`,
+        data.error_message ?? ""
+      );
+    }
+    return data.results ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -69,32 +104,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch all categories in parallel
+    // Fetch all categories in parallel at max radius
     const results = await Promise.all(
       CATEGORIES.map(async (cat) => {
-        const places = await searchNearby(lat, lng, cat.type, apiKey);
+        const places = await searchNearby(lat, lng, cat.type, cat.keyword, apiKey);
         return {
           category: cat.type,
           categoryAr: cat.ar,
           icon: cat.icon,
-          places: places.slice(0, 10).map((p: PlaceResult) => ({
-            name: p.name,
-            vicinity: p.vicinity || "",
-            rating: p.rating || null,
-          })),
+          places: places
+            .map((p: PlaceResult) => ({
+              name: p.name,
+              vicinity: p.vicinity ?? "",
+              rating: p.rating ?? null,
+              distance: p.geometry
+                ? calcDistance(
+                    lat,
+                    lng,
+                    p.geometry.location.lat,
+                    p.geometry.location.lng
+                  )
+                : null,
+            }))
+            .sort(
+              (a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS)
+            )
+            .slice(0, 20),
         } satisfies CategoryResult;
       })
     );
 
-    // Summary counts for price simulation
+    // Summary counts for price simulation (use full 5km results)
     const summary = {
-      restaurants: results.find((r) => r.category === "restaurant")?.places.length || 0,
-      schools: results.find((r) => r.category === "school")?.places.length || 0,
-      hospitals: results.find((r) => r.category === "hospital")?.places.length || 0,
-      malls: results.find((r) => r.category === "shopping_mall")?.places.length || 0,
-      mosques: results.find((r) => r.category === "mosque")?.places.length || 0,
-      parks: results.find((r) => r.category === "park")?.places.length || 0,
-      banks: results.find((r) => r.category === "bank")?.places.length || 0,
+      restaurants:
+        results.find((r) => r.category === "restaurant")?.places.length ?? 0,
+      schools:
+        results.find((r) => r.category === "school")?.places.length ?? 0,
+      hospitals:
+        results.find((r) => r.category === "hospital")?.places.length ?? 0,
+      malls:
+        results.find((r) => r.category === "shopping_mall")?.places.length ?? 0,
+      mosques:
+        results.find((r) => r.category === "place_of_worship")?.places.length ?? 0,
+      parks: results.find((r) => r.category === "park")?.places.length ?? 0,
+      banks: results.find((r) => r.category === "bank")?.places.length ?? 0,
     };
 
     return NextResponse.json({ categories: results, summary });
