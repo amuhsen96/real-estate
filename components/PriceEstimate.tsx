@@ -25,6 +25,34 @@ function getScoreBg(score: number): string {
   return "bg-red-50 border-red-200";
 }
 
+function ConfidenceBar({ value }: { value: number }) {
+  const color =
+    value >= 80 ? "bg-green-500" :
+    value >= 60 ? "bg-blue-500" :
+    value >= 40 ? "bg-amber-500" :
+    "bg-red-400";
+
+  const label =
+    value >= 80 ? "عالية" :
+    value >= 60 ? "متوسطة" :
+    value >= 40 ? "منخفضة" :
+    "ضعيفة";
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+      <span className="text-xs font-medium text-gray-600 w-12 text-left">
+        {value}% <span className="text-gray-400">({label})</span>
+      </span>
+    </div>
+  );
+}
+
 export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProps) {
   if (isLoading) {
     return (
@@ -48,7 +76,6 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
       <div className="px-6 py-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-800">تقديرات أسعار العقارات</h2>
-          {/* Data source badge */}
           {isReal ? (
             <span className="flex items-center gap-1.5 bg-green-50 text-green-700 text-xs font-medium px-3 py-1 rounded-full border border-green-200">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block" />
@@ -66,9 +93,9 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
         </p>
       </div>
 
-      <div className="p-6">
+      <div className="p-6 space-y-5">
         {/* Location Score */}
-        <div className={`${getScoreBg(estimate.locationScore)} border rounded-xl p-4 mb-6 flex items-center justify-between`}>
+        <div className={`${getScoreBg(estimate.locationScore)} border rounded-xl p-4 flex items-center justify-between`}>
           <div>
             <p className="text-sm font-medium text-gray-700">مؤشر جودة الموقع</p>
             <p className="text-xs text-gray-500 mt-0.5">بناءً على الموقع داخل المدينة</p>
@@ -79,6 +106,30 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
           </div>
         </div>
 
+        {/* Confidence meter — يظهر فقط عند وجود بيانات حقيقية */}
+        {isReal && estimate.confidence != null && (
+          <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-700">مستوى الثقة بالتقدير</p>
+              {estimate.nearbyCount != null && estimate.nearbyCount > 0 && (
+                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                  {estimate.nearbyCount} صفقة قريبة (≤20 كم)
+                </span>
+              )}
+            </div>
+            <ConfidenceBar value={estimate.confidence} />
+            <p className="text-xs text-gray-400 mt-2">
+              {estimate.confidence >= 80
+                ? "بيانات وفيرة وقريبة — التقدير دقيق جداً"
+                : estimate.confidence >= 60
+                ? "بيانات كافية — التقدير موثوق"
+                : estimate.confidence >= 40
+                ? "بيانات محدودة — أضف صفقات قريبة لتحسين الدقة"
+                : "بيانات قليلة — التقدير تقريبي، يُوصى بإضافة بيانات"}
+            </p>
+          </div>
+        )}
+
         {/* Price Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-gradient-to-bl from-blue-50 to-white border border-blue-100 rounded-xl p-4">
@@ -88,13 +139,13 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
           </div>
 
           <div className="bg-gradient-to-bl from-green-50 to-white border border-green-100 rounded-xl p-4">
-            <p className="text-sm text-gray-600 mb-1">الإيجار الشهري (شقة 150م²)</p>
+            <p className="text-sm text-gray-600 mb-1">الإيجار الشهري التقديري</p>
             <p className="text-2xl font-bold text-green-700">{formatNumber(estimate.monthlyRent)}</p>
             <p className="text-xs text-gray-400 mt-1">ريال سعودي / شهر</p>
           </div>
 
           <div className="md:col-span-2 bg-gray-50 border border-gray-100 rounded-xl p-4">
-            <p className="text-sm text-gray-600 mb-3">نطاق الأسعار في المنطقة</p>
+            <p className="text-sm text-gray-600 mb-3">نطاق سعر المتر في المنطقة</p>
             <div className="flex items-center gap-4">
               <div className="text-center flex-1">
                 <p className="text-xs text-gray-400 mb-1">الحد الأدنى</p>
@@ -111,11 +162,11 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
         </div>
 
         {/* Disclaimer */}
-        <div className={`mt-6 rounded-xl px-4 py-3 ${isReal ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
+        <div className={`rounded-xl px-4 py-3 ${isReal ? "bg-green-50 border border-green-100" : "bg-amber-50 border border-amber-100"}`}>
           <p className={`text-xs ${isReal ? "text-green-700" : "text-amber-700"}`}>
             {isReal
-              ? `التقدير مبني على ${estimate.transactionCount} صفقة حقيقية في ${estimate.cityName}. للحصول على تقييم دقيق راجع مقيّماً عقارياً معتمداً.`
-              : "لم تُضف بعد بيانات صفقات حقيقية لهذه المدينة. الأسعار تقديرية إحصائية. أضف صفقات من صفحة البيانات لتحسين الدقة."}
+              ? `التقدير مبني على ${estimate.transactionCount} صفقة حقيقية في ${estimate.cityName} باستخدام خوارزمية KNN مرجّحة بالمسافة والنوع والمساحة. للتقييم الدقيق راجع مقيّماً معتمداً.`
+              : "لم تُضَف بعد صفقات حقيقية لهذه المدينة. الأسعار تقديرية إحصائية. أضف صفقات من صفحة البيانات لتحسين الدقة."}
           </p>
         </div>
       </div>

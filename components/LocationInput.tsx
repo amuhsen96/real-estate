@@ -3,14 +3,25 @@
 import { useState } from "react";
 import { parseInput, type Coordinates } from "@/lib/parseGoogleMapsUrl";
 
+export interface SearchParams extends Coordinates {
+  propertyType?: string;
+  area?: number;
+}
+
 interface LocationInputProps {
-  onSearch: (coords: Coordinates) => void;
+  onSearch: (params: SearchParams) => void;
   isLoading: boolean;
 }
+
+const PROPERTY_TYPES = [
+  "غير محدد", "شقة", "فيلا", "دور", "أرض", "تجاري", "استوديو", "غرفة",
+];
 
 export default function LocationInput({ onSearch, isLoading }: LocationInputProps) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  const [propertyType, setPropertyType] = useState("غير محدد");
+  const [area, setArea] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,12 +30,15 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
     const result = parseInput(input);
 
     if (result.success && result.coordinates) {
-      onSearch(result.coordinates);
+      onSearch({
+        ...result.coordinates,
+        propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
+        area: area ? Number(area) : undefined,
+      });
       return;
     }
 
     if (result.needsServerResolve) {
-      // Resolve short URL server-side
       try {
         const res = await fetch("/api/resolve-url", {
           method: "POST",
@@ -39,7 +53,12 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
         }
 
         const data = await res.json();
-        onSearch({ lat: data.lat, lng: data.lng });
+        onSearch({
+          lat: data.lat,
+          lng: data.lng,
+          propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
+          area: area ? Number(area) : undefined,
+        });
         return;
       } catch {
         setError("فشل في الاتصال بالخادم لفتح الرابط المختصر");
@@ -63,6 +82,7 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Location input */}
           <div>
             <label
               htmlFor="location-input"
@@ -82,6 +102,40 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
               className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-base"
               dir="ltr"
             />
+          </div>
+
+          {/* Property type + area */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                نوع العقار
+                <span className="mr-1 text-xs text-gray-400">(يحسّن الدقة)</span>
+              </label>
+              <select
+                value={propertyType}
+                onChange={(e) => setPropertyType(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
+              >
+                {PROPERTY_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                المساحة (م²)
+                <span className="mr-1 text-xs text-gray-400">(يحسّن الدقة)</span>
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={area}
+                onChange={(e) => setArea(e.target.value)}
+                placeholder="مثال: 150"
+                className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
+              />
+            </div>
           </div>
 
           {error && (

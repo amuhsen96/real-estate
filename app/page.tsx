@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import LocationInput from "@/components/LocationInput";
+import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
 import PriceEstimate from "@/components/PriceEstimate";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
@@ -14,8 +14,8 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSearch = async (coords: Coordinates) => {
-    setCoordinates(coords);
+  const handleSearch = async (params: SearchParams) => {
+    setCoordinates({ lat: params.lat, lng: params.lng });
     setIsLoading(true);
     setError("");
     setPriceEstimate(null);
@@ -24,7 +24,12 @@ export default function Home() {
       const priceRes = await fetch("/api/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: coords.lat, lng: coords.lng }),
+        body: JSON.stringify({
+          lat: params.lat,
+          lng: params.lng,
+          propertyType: params.propertyType,
+          area: params.area,
+        }),
       });
 
       if (!priceRes.ok) {

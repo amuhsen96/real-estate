@@ -15,14 +15,19 @@ function loadTransactions(): Transaction[] {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { lat, lng } = body;
+    const { lat, lng, propertyType, area } = body;
 
     if (lat == null || lng == null) {
       return NextResponse.json({ error: "lat و lng مطلوبان" }, { status: 400 });
     }
 
     const transactions = loadTransactions();
-    const estimate = estimatePrice({ lat, lng }, transactions);
+    const estimate = estimatePrice(
+      { lat, lng },
+      transactions,
+      propertyType ?? undefined,
+      area ? Number(area) : undefined
+    );
     return NextResponse.json(estimate);
   } catch {
     return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار" }, { status: 500 });
