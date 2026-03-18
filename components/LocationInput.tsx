@@ -6,6 +6,7 @@ import { parseInput, type Coordinates } from "@/lib/parseGoogleMapsUrl";
 export interface SearchParams extends Coordinates {
   propertyType?: string;
   area?: number;
+  placeName?: string;   // اسم المكان المستخرج من الرابط (إن وُجد)
 }
 
 interface LocationInputProps {
@@ -34,6 +35,7 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
         ...result.coordinates,
         propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
         area: area ? Number(area) : undefined,
+        placeName: result.placeName,
       });
       return;
     }
@@ -58,6 +60,7 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
           lng: data.lng,
           propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
           area: area ? Number(area) : undefined,
+          placeName: data.placeName,
         });
         return;
       } catch {

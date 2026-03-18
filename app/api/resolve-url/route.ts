@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { extractPlaceName } from "@/lib/parseGoogleMapsUrl";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,12 +19,15 @@ export async function POST(request: NextRequest) {
     const finalUrl = response.url;
 
     // Extract coordinates from the resolved URL
+    const placeName = extractPlaceName(finalUrl);
+
     const atMatch = finalUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
     if (atMatch) {
       return NextResponse.json({
         lat: parseFloat(atMatch[1]),
         lng: parseFloat(atMatch[2]),
         resolvedUrl: finalUrl,
+        ...(placeName ? { placeName } : {}),
       });
     }
 
@@ -38,6 +42,7 @@ export async function POST(request: NextRequest) {
             lat: parseFloat(coordMatch[1]),
             lng: parseFloat(coordMatch[2]),
             resolvedUrl: finalUrl,
+            ...(placeName ? { placeName } : {}),
           });
         }
       }
