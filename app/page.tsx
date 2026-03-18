@@ -11,6 +11,7 @@ import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 export default function Home() {
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [priceEstimate, setPriceEstimate] = useState<PriceEstimateType | null>(null);
+  const [detectedDistrict, setDetectedDistrict] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -19,18 +20,30 @@ export default function Home() {
     setIsLoading(true);
     setError("");
     setPriceEstimate(null);
+    setDetectedDistrict(null);
 
     try {
-      const priceRes = await fetch("/api/prices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lat: params.lat,
-          lng: params.lng,
-          propertyType: params.propertyType,
-          area: params.area,
+      // استدعاء الأسعار وكشف الحي بالتوازي
+      const [priceRes, geoRes] = await Promise.all([
+        fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lat: params.lat,
+            lng: params.lng,
+            propertyType: params.propertyType,
+            area: params.area,
+          }),
         }),
-      });
+        // إذا وُجد placeName في الرابط فلا حاجة لـ Nominatim
+        params.placeName
+          ? Promise.resolve(null)
+          : fetch("/api/reverse-geocode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ lat: params.lat, lng: params.lng }),
+            }),
+      ]);
 
       if (!priceRes.ok) {
         const data = await priceRes.json();
@@ -38,8 +51,15 @@ export default function Home() {
         return;
       }
 
-      const priceData = await priceRes.json();
-      setPriceEstimate(priceData);
+      setPriceEstimate(await priceRes.json());
+
+      // تحديد الحي: من الرابط أولاً، ثم Nominatim
+      if (params.placeName) {
+        setDetectedDistrict(params.placeName);
+      } else if (geoRes && geoRes.ok) {
+        const geoData = await geoRes.json();
+        setDetectedDistrict(geoData.district ?? null);
+      }
     } catch {
       setError("حدث خطأ في الاتصال بالخادم.");
     } finally {
@@ -72,7 +92,11 @@ export default function Home() {
         {coordinates && (
           <div className="space-y-6">
             <SatelliteView coordinates={coordinates} />
-            <PriceEstimate estimate={priceEstimate} isLoading={isLoading} />
+            <PriceEstimate
+              estimate={priceEstimate}
+              isLoading={isLoading}
+              detectedDistrict={detectedDistrict}
+            />
           </div>
         )}
 

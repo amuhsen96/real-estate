@@ -6,6 +6,7 @@ export interface Coordinates {
 export interface ParseResult {
   success: boolean;
   coordinates?: Coordinates;
+  placeName?: string;          // اسم المكان المستخرج من الرابط (إن وُجد)
   error?: string;
   needsServerResolve?: boolean;
 }
@@ -38,7 +39,10 @@ export function parseInput(input: string): ParseResult {
 
   // Try parsing as Google Maps URL
   const urlCoords = parseGoogleMapsUrl(trimmed);
-  if (urlCoords) return { success: true, coordinates: urlCoords };
+  if (urlCoords) {
+    const placeName = extractPlaceName(trimmed);
+    return { success: true, coordinates: urlCoords, ...(placeName ? { placeName } : {}) };
+  }
 
   return {
     success: false,
@@ -129,6 +133,20 @@ function parseGoogleMapsUrl(input: string): Coordinates | null {
   }
 
   return null;
+}
+
+// استخراج اسم المكان من مسار /maps/place/{NAME}/
+export function extractPlaceName(url: string): string | null {
+  try {
+    const match = url.match(/\/maps\/place\/([^/@?#]+)/);
+    if (!match) return null;
+    const decoded = decodeURIComponent(match[1].replace(/\+/g, " ")).trim();
+    // تجاهل قيم تبدو كأرقام أو إحداثيات
+    if (!decoded || /^[\d,.\s-]+$/.test(decoded)) return null;
+    return decoded;
+  } catch {
+    return null;
+  }
 }
 
 function isValidCoordinate(lat: number, lng: number): boolean {

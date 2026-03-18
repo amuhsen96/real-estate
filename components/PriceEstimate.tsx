@@ -5,6 +5,7 @@ import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 interface PriceEstimateProps {
   estimate: PriceEstimateType | null;
   isLoading: boolean;
+  detectedDistrict?: string | null;
 }
 
 function formatNumber(num: number): string {
@@ -53,7 +54,7 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProps) {
+export default function PriceEstimate({ estimate, isLoading, detectedDistrict }: PriceEstimateProps) {
   if (isLoading) {
     return (
       <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
@@ -89,7 +90,13 @@ export default function PriceEstimate({ estimate, isLoading }: PriceEstimateProp
           )}
         </div>
         <p className="text-sm text-gray-500 mt-1">
-          {estimate.cityName} — {estimate.areaClassification}
+          {estimate.cityName}
+          {detectedDistrict && (
+            <span className="mx-1">
+              — <span className="text-blue-600 font-medium">{detectedDistrict}</span>
+            </span>
+          )}
+          {" — "}{estimate.areaClassification}
         </p>
       </div>
 
