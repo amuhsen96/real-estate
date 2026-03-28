@@ -128,34 +128,49 @@ export default function DataPage() {
       let csvContent = "";
 
       if (ext === "csv" || ext === "txt") {
-        // CSV: قراءة مباشرة كنص
         csvContent = await file.text();
       } else if (ext === "xlsx" || ext === "xls") {
-        // Excel: تحويل باستخدام SheetJS
         const XLSX = await import("xlsx");
         const buffer = await file.arrayBuffer();
-        const wb = XLSX.read(buffer, { type: "array" });
+        // استخدام Uint8Array بدلاً من ArrayBuffer مباشرة
+        const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        csvContent = XLSX.utils.sheet_to_csv(ws);
+        // تحويل لمصفوفة صفوف بدلاً من نص CSV لتجنب مشاكل الفصل
+        const rows: string[][] = XLSX.utils.sheet_to_json(ws, {
+          header: 1,
+          defval: "",
+          raw: false,
+        }) as string[][];
+        // تحويل لـ CSV بفاصلة واضحة
+        csvContent = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
       } else {
         setFileStatus("error");
         showMessage("error", "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
         return;
       }
 
+      // إزالة BOM وتنظيف النص
+      csvContent = csvContent.replace(/^\uFEFF/, "").trim();
+
+      if (!csvContent) {
+        setFileStatus("error");
+        showMessage("error", "الملف فارغ أو لا يحتوي على بيانات.");
+        return;
+      }
+
       // معاينة أول 5 صفوف
-      const rows = csvContent
-        .trim()
+      const allRows = csvContent
         .split(/\r?\n/)
         .slice(0, 6)
-        .map((r) => r.split(/[,\t]/).map((c) => c.trim().replace(/^["']|["']$/g, "")));
+        .map((r) => r.split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
 
       setParsedCsv(csvContent);
-      setFilePreviewRows(rows);
+      setFilePreviewRows(allRows);
       setFileStatus("ready");
-    } catch {
+    } catch (err) {
       setFileStatus("error");
-      showMessage("error", "تعذّر قراءة الملف. تأكد من أن الملف غير تالف.");
+      const msg = err instanceof Error ? err.message : "خطأ غير معروف";
+      showMessage("error", `تعذّر قراءة الملف: ${msg}`);
     }
   }
 
@@ -163,10 +178,13 @@ export default function DataPage() {
     if (!parsedCsv) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/transactions", {
+      // إرسال كـ FormData لتجنب حد حجم JSON Body
+      const form = new FormData();
+      form.append("data", parsedCsv);
+
+      const res = await fetch("/api/transactions/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "csv", data: parsedCsv }),
+        body: form,
       });
       const d = await res.json();
       if (res.ok) {
