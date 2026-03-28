@@ -48,19 +48,21 @@ async function detectDistrict(lat: number, lng: number): Promise<string | null> 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { lat, lng, propertyType, area } = body;
+    const { lat, lng, propertyType, area, district: userDistrict } = body;
 
     if (lat == null || lng == null) {
       return NextResponse.json({ error: "lat و lng مطلوبان" }, { status: 400 });
     }
 
-    // اكتشاف الحي بالتوازي مع تحميل البيانات
-    const [transactions, metroStations, stadiums, detectedDistrict] = await Promise.all([
+    // إذا أدخل المستخدم الحي يدوياً، نستخدمه مباشرة ولا نحتاج Nominatim
+    const [transactions, metroStations, stadiums, nominatimDistrict] = await Promise.all([
       Promise.resolve(loadTransactions()),
       Promise.resolve(loadMetroStations()),
       Promise.resolve(loadStadiums()),
-      detectDistrict(lat, lng),
+      userDistrict ? Promise.resolve(null) : detectDistrict(lat, lng),
     ]);
+
+    const detectedDistrict = (userDistrict as string | undefined) ?? nominatimDistrict;
 
     const estimate = estimatePrice(
       { lat, lng },

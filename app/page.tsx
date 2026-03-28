@@ -32,6 +32,7 @@ export default function Home() {
           lng: params.lng,
           propertyType: params.propertyType,
           area: params.area,
+          district: params.district,   // الحي المُدخل يدوياً (إن وُجد)
         }),
       });
 
@@ -41,10 +42,10 @@ export default function Home() {
         return;
       }
 
-      // الحي يأتي من استجابة الأسعار (كشفه الـ API داخلياً)
-      const { detectedDistrict: district, ...estimate } = await priceRes.json();
+      // الحي: المُدخل يدوياً > من الرابط > المكتشف تلقائياً
+      const { detectedDistrict: autoDistrict, ...estimate } = await priceRes.json();
       setPriceEstimate(estimate);
-      setDetectedDistrict(params.placeName ?? district ?? null);
+      setDetectedDistrict(params.district ?? params.placeName ?? autoDistrict ?? null);
     } catch {
       setError("حدث خطأ في الاتصال بالخادم.");
     } finally {

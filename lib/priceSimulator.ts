@@ -114,6 +114,58 @@ function seededRandom(lat: number, lng: number): number {
   return x - Math.floor(x);
 }
 
+// ── تطبيع النص العربي ومطابقة تقريبية للأحياء ────────────────────────────────
+
+/** تطبيع: حذف التشكيل، توحيد الهمزات والألف، إزالة "ال" التعريف */
+function normalizeArabic(text: string): string {
+  return text
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, "")   // حذف التشكيل والسكون والشدة
+    .replace(/[أإآ]/g, "ا")                   // توحيد أشكال الألف
+    .replace(/[ىئ]/g, "ي")                    // توحيد الياء
+    .replace(/ة/g, "ه")                       // توحيد التاء المربوطة
+    .replace(/^ال/, "")                       // إزالة "ال" التعريف من البداية
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/** مسافة ليفنشتاين (لقياس الفرق بين سلسلتين) */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
+/**
+ * مطابقة الحي مع تحمّل الأخطاء الإملائية الشائعة في العربية.
+ * تعيد:
+ *   "exact"   — تطابق تام بعد التطبيع
+ *   "fuzzy"   — متشابه (مسافة تحرير ≤ 2 أو أحدهما يحتوي الآخر)
+ *   "none"    — لا تطابق
+ */
+export function matchDistrict(
+  query: string,
+  candidate: string
+): "exact" | "fuzzy" | "none" {
+  if (!query || !candidate) return "none";
+  const q = normalizeArabic(query);
+  const c = normalizeArabic(candidate);
+  if (q === c) return "exact";
+  // تطابق جزئي (أحدهما يحتوي الآخر)
+  if (q.length >= 3 && (c.includes(q) || q.includes(c))) return "fuzzy";
+  // مسافة تحرير ≤ 2 للكلمات القصيرة/المتوسطة
+  const maxDist = q.length <= 5 ? 1 : 2;
+  if (levenshtein(q, c) <= maxDist) return "fuzzy";
+  return "none";
+}
+
 // ── حساب وزن الحداثة بناءً على التاريخ ────────────────────────────────────────
 function recencyWeight(dateStr?: string): number {
   if (!dateStr) return 1.0;
@@ -185,11 +237,14 @@ function estimatePriceFromTransactions(
         ? t.propertyType === requestedPropertyType ? 2.0 : 0.5
         : 1.0;
 
-    // 3. وزن الحي (أساسي: 1.8 تطابق، 0.9 اختلاف)
+    // 3. وزن الحي مع مطابقة تقريبية (exact=1.8، fuzzy=1.4، none=0.9)
+    const districtMatch = requestedDistrict
+      ? matchDistrict(requestedDistrict, t.district)
+      : "none";
     const wDistrict =
-      requestedDistrict
-        ? t.district === requestedDistrict ? 1.8 : 0.9
-        : 1.0;
+      districtMatch === "exact" ? 1.8 :
+      districtMatch === "fuzzy" ? 1.4 :
+      requestedDistrict ? 0.9 : 1.0;
 
     // 4. وزن تشابه المساحة
     let wArea = 1.0;
@@ -213,24 +268,26 @@ function estimatePriceFromTransactions(
 
     const hasDistrictFilter = !!requestedDistrict;
     const hasTypeFilter = !!(requestedPropertyType && requestedPropertyType !== "غير محدد");
-    const sameDistrict = hasDistrictFilter && t.district === requestedDistrict;
+    const dm = hasDistrictFilter ? matchDistrict(requestedDistrict!, t.district) : "none";
+    // تطابق الحي: exact أو fuzzy يُعامَلان كـ"نفس الحي"
+    const districtMatches = dm === "exact" || dm === "fuzzy";
     const sameType = hasTypeFilter && t.propertyType === requestedPropertyType;
+
+    // وزن الحي التقريبي: exact=أعلى، fuzzy=أقل قليلاً
+    const districtBaseMultiplier = dm === "exact" ? 1.0 : dm === "fuzzy" ? 0.85 : 0;
 
     let baseW: number;
     if (hasDistrictFilter && hasTypeFilter) {
-      // كلا المعيارين معروفان → جدول الأولويات
-      if (sameDistrict && sameType)   baseW = 6.0; // ← الأساسي
-      else if (sameDistrict)          baseW = 1.0; // نفس الحي، نوع مختلف
-      else if (sameType)              baseW = 0.8; // نفس النوع، حي مختلف
-      else                            baseW = 0.1; // لا شيء يتطابق
+      if (districtMatches && sameType)   baseW = (dm === "exact" ? 6.0 : 5.0); // ← الأساسي
+      else if (districtMatches)          baseW = dm === "exact" ? 1.0 : 0.85;
+      else if (sameType)                 baseW = 0.8;
+      else                               baseW = 0.1;
     } else if (hasDistrictFilter) {
-      // نعرف الحي فقط
-      baseW = sameDistrict ? 2.0 : 0.3;
+      baseW = districtMatches ? (2.0 * districtBaseMultiplier || 1.7) : 0.3;
     } else if (hasTypeFilter) {
-      // نعرف النوع فقط
       baseW = sameType ? 1.0 : 0.4;
     } else {
-      baseW = 0.5; // لا نعرف شيئاً
+      baseW = 0.5;
     }
 
     weighted.push({ ppsm: t.pricePerSqm, w: baseW * wRecency, distKm: Infinity });

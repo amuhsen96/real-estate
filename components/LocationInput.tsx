@@ -6,7 +6,8 @@ import { parseInput, type Coordinates } from "@/lib/parseGoogleMapsUrl";
 export interface SearchParams extends Coordinates {
   propertyType?: string;
   area?: number;
-  placeName?: string;   // اسم المكان المستخرج من الرابط (إن وُجد)
+  district?: string;         // اسم الحي المدخل يدوياً
+  placeName?: string;        // اسم المكان المستخرج من الرابط (إن وُجد)
 }
 
 interface LocationInputProps {
@@ -23,6 +24,7 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
   const [error, setError] = useState("");
   const [propertyType, setPropertyType] = useState("غير محدد");
   const [area, setArea] = useState("");
+  const [district, setDistrict] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +32,14 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
 
     const result = parseInput(input);
 
+    const districtVal = district.trim() || undefined;
+
     if (result.success && result.coordinates) {
       onSearch({
         ...result.coordinates,
         propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
         area: area ? Number(area) : undefined,
+        district: districtVal,
         placeName: result.placeName,
       });
       return;
@@ -60,6 +65,7 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
           lng: data.lng,
           propertyType: propertyType !== "غير محدد" ? propertyType : undefined,
           area: area ? Number(area) : undefined,
+          district: districtVal,
           placeName: data.placeName,
         });
         return;
@@ -104,6 +110,21 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
               placeholder="24.7136, 46.6753 أو رابط Google Maps"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-base"
               dir="ltr"
+            />
+          </div>
+
+          {/* District */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              الحي / المنطقة
+              <span className="mr-1 text-xs text-gray-400">(اختياري — يحسّن الدقة كثيراً)</span>
+            </label>
+            <input
+              type="text"
+              value={district}
+              onChange={(e) => setDistrict(e.target.value)}
+              placeholder="مثال: إشبيليا، النرجس، الملقا..."
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-base"
             />
           </div>
 
