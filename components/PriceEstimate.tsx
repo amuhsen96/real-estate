@@ -106,7 +106,7 @@ export default function PriceEstimate({ estimate, isLoading, detectedDistrict }:
           <div>
             <p className="text-sm font-medium text-gray-700">مؤشر جودة الموقع</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              بناءً على الموقع داخل المدينة
+              بناءً على أسعار المنطقة والموقع
               {estimate.metroBonus && estimate.metroBonus > 0 && (
                 <span className="mr-1 text-blue-600 font-medium">
                   + قرب المترو (+{estimate.metroBonus})

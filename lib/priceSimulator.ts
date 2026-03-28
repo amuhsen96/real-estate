@@ -423,13 +423,60 @@ export function estimatePrice(
     }
   }
 
-  if (locationScore >= 8) areaClassification = "منطقة راقية";
-  else if (locationScore >= 6) areaClassification = "منطقة جيدة";
-  else if (locationScore >= 4) areaClassification = "منطقة متوسطة";
-  else areaClassification = "منطقة نائية";
-
-  // ── تصفية الصفقات بالمدينة أولاً ─────────────────────────────────────────
+  // ── تصفية الصفقات بالمدينة ───────────────────────────────────────────────
   const cityTx = transactions.filter((t) => t.city === cityName);
+
+  // ── تصنيف المنطقة: سعر المتر الفعلي (أولوية) أو الموقع الجغرافي (احتياطي) ──
+  //
+  // إذا توفرت صفقات كافية للحي المطلوب نحسب نسبة سعره للمتوسط:
+  //   نسبة ≥ 1.30 → راقية    (الحي أغلى 30%+ من المتوسط)
+  //   نسبة ≥ 1.10 → جيدة
+  //   نسبة ≥ 0.85 → متوسطة
+  //   نسبة < 0.85 → نائية / شعبية
+  //
+  // الدرجة النهائية = 70% سعر + 30% موقع (لتعزيز الدقة وتقليل أثر الموقع الجغرافي)
+  {
+    const hasCityData = cityTx.length >= 3;
+    let usedPriceRatio = false;
+
+    if (requestedDistrict && hasCityData) {
+      const districtTx = cityTx.filter(
+        (t) => matchDistrict(requestedDistrict, t.district) !== "none"
+      );
+
+      if (districtTx.length >= 2) {
+        const districtAvg =
+          districtTx.reduce((s, t) => s + t.pricePerSqm, 0) / districtTx.length;
+        const cityAvg =
+          cityTx.reduce((s, t) => s + t.pricePerSqm, 0) / cityTx.length;
+        const ratio = districtAvg / cityAvg;
+
+        // تحويل النسبة لدرجة 0–10
+        const priceScore =
+          ratio >= 1.5 ? 10.0 :
+          ratio >= 1.3 ? 8.5  :
+          ratio >= 1.1 ? 7.0  :
+          ratio >= 0.9 ? 6.0  :
+          ratio >= 0.7 ? 4.5  : 3.0;
+
+        // مزج: 70% سعر + 30% موقع
+        locationScore = Math.round(
+          Math.min(10, 0.7 * priceScore + 0.3 * locationScore) * 10
+        ) / 10;
+
+        usedPriceRatio = true;
+      }
+    }
+
+    // تصنيف لغوي من الدرجة النهائية
+    if (locationScore >= 8)      areaClassification = "منطقة راقية";
+    else if (locationScore >= 6) areaClassification = "منطقة جيدة";
+    else if (locationScore >= 4) areaClassification = "منطقة متوسطة";
+    else                         areaClassification = "منطقة نائية";
+
+    // تجاهل متغير usedPriceRatio في البناء (مستقبلاً قد يُعرض في الـ UI)
+    void usedPriceRatio;
+  }
 
   const real = estimatePriceFromTransactions(
     coords,
