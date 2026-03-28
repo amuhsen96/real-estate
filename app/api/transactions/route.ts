@@ -144,9 +144,16 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE — remove a transaction by id (?id=xxx)
+// DELETE — remove one transaction (?id=xxx) or all (?all=true)
 export async function DELETE(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
+  const all = request.nextUrl.searchParams.get("all");
+
+  if (all === "true") {
+    writeTransactions([]);
+    return NextResponse.json({ deleted: "all", total: 0 });
+  }
+
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
 
   let transactions = readTransactions();

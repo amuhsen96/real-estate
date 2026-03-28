@@ -194,6 +194,15 @@ export default function DataPage() {
     }
   }
 
+  async function handleDeleteAll() {
+    if (!confirm(`هل أنت متأكد من حذف جميع الصفقات (${transactions.length})؟ لا يمكن التراجع.`)) return;
+    const res = await fetch("/api/transactions?all=true", { method: "DELETE" });
+    if (res.ok) {
+      setTransactions([]);
+      showMessage("success", "تم حذف جميع الصفقات");
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4" dir="rtl">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -483,6 +492,14 @@ export default function DataPage() {
                 </span>
               )}
             </h2>
+            {transactions.length > 0 && (
+              <button
+                onClick={handleDeleteAll}
+                className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                حذف الكل
+              </button>
+            )}
           </div>
 
           {loading ? (
