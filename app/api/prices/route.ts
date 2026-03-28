@@ -28,6 +28,23 @@ function loadStadiums(): Stadium[] {
   }
 }
 
+/** اكتشاف الحي عبر Nominatim (مع timeout 4 ثواني) */
+async function detectDistrict(lat: number, lng: number): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ar`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "RealEstateApp/1.0" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const addr = data.address ?? {};
+    return addr.suburb ?? addr.neighbourhood ?? addr.quarter ?? addr.village ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -37,9 +54,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lat و lng مطلوبان" }, { status: 400 });
     }
 
-    const transactions = loadTransactions();
-    const metroStations = loadMetroStations();
-    const stadiums = loadStadiums();
+    // اكتشاف الحي بالتوازي مع تحميل البيانات
+    const [transactions, metroStations, stadiums, detectedDistrict] = await Promise.all([
+      Promise.resolve(loadTransactions()),
+      Promise.resolve(loadMetroStations()),
+      Promise.resolve(loadStadiums()),
+      detectDistrict(lat, lng),
+    ]);
 
     const estimate = estimatePrice(
       { lat, lng },
@@ -47,9 +68,10 @@ export async function POST(request: NextRequest) {
       propertyType ?? undefined,
       area ? Number(area) : undefined,
       metroStations,
-      stadiums
+      stadiums,
+      detectedDistrict ?? undefined
     );
-    return NextResponse.json(estimate);
+    return NextResponse.json({ ...estimate, detectedDistrict });
   } catch {
     return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار" }, { status: 500 });
   }

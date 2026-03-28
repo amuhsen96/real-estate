@@ -138,6 +138,8 @@ function recencyWeight(dateStr?: string): number {
 //   2. تطابق نوع العقار   → مضاعف 1.5 عند التطابق
 //   3. تشابه المساحة      → خصم حتى 30% عند التباين الكبير
 //   4. حداثة الصفقة       → مضاعف من 0.85 إلى 1.4
+//   5. تطابق الحي         → مضاعف 1.8 للصفقات ذات الإحداثيات (تعزيز إضافي)
+//                           ووزن أساسي مرتفع 4× للصفقات بدون إحداثيات في نفس الحي
 //
 // النتيجة: متوسط مرجّح لـ pricePerSqm + درجة الثقة
 //
@@ -145,7 +147,8 @@ function estimatePriceFromTransactions(
   coords: Coordinates,
   transactions: Transaction[],
   requestedPropertyType?: string,
-  requestedArea?: number
+  requestedArea?: number,
+  requestedDistrict?: string
 ): {
   pricePerSqm: number;
   count: number;
@@ -186,11 +189,15 @@ function estimatePriceFromTransactions(
     // 4. وزن الحداثة
     const wRecency = recencyWeight(t.date);
 
-    const totalW = wDist * wType * wArea * wRecency;
+    // 5. وزن الحي (تعزيز عند تطابق الحي مع إحداثيات معروفة)
+    const wDistrict = (requestedDistrict && t.district === requestedDistrict) ? 1.8 : 1.0;
+
+    const totalW = wDist * wType * wArea * wRecency * wDistrict;
     weighted.push({ ppsm: t.pricePerSqm, w: totalW, distKm });
   }
 
-  // ── صفقات المدينة بدون إحداثيات كدعم إضافي ───────────────────────────────
+  // ── صفقات المدينة بدون إحداثيات ─────────────────────────────────────────
+  // الوزن الأساسي يعتمد على تطابق الحي: صفقات نفس الحي تأخذ أولوية عالية
   const withoutCoords = transactions.filter((t) => t.lat == null || t.lng == null);
   for (const t of withoutCoords) {
     const wType =
@@ -198,8 +205,16 @@ function estimatePriceFromTransactions(
         ? t.propertyType === requestedPropertyType ? 1.2 : 0.6
         : 1.0;
     const wRecency = recencyWeight(t.date);
-    // وزن أساسي صغير لأنه لا توجد إحداثيات
-    weighted.push({ ppsm: t.pricePerSqm, w: 0.5 * wType * wRecency, distKm: Infinity });
+
+    // الوزن الأساسي: عالٍ جداً إذا تطابق الحي، منخفض جداً إذا اختلف
+    let baseW: number;
+    if (requestedDistrict) {
+      baseW = t.district === requestedDistrict ? 4.0 : 0.2;
+    } else {
+      baseW = 0.5; // fallback: وزن موحّد عند عدم معرفة الحي
+    }
+
+    weighted.push({ ppsm: t.pricePerSqm, w: baseW * wType * wRecency, distKm: Infinity });
   }
 
   if (weighted.length === 0) return null;
@@ -269,7 +284,8 @@ export function estimatePrice(
   requestedPropertyType?: string,
   requestedArea?: number,
   metroStations?: MetroStation[],
-  stadiums?: Stadium[]
+  stadiums?: Stadium[],
+  requestedDistrict?: string
 ): PriceEstimate {
   const { city, distFromCenter } = detectCity(coords);
 
@@ -343,7 +359,8 @@ export function estimatePrice(
     coords,
     cityTx,
     requestedPropertyType,
-    requestedArea
+    requestedArea,
+    requestedDistrict
   );
 
   if (real) {
