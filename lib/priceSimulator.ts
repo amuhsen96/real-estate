@@ -1,5 +1,41 @@
 import type { Coordinates } from "./parseGoogleMapsUrl";
 
+export interface MetroStation {
+  id: string;
+  nameAr: string;
+  line: number;
+  lineColor: string;
+  lineNameAr: string;
+  lat: number;
+  lng: number;
+}
+
+export interface Stadium {
+  id: string;
+  nameAr: string;
+  city: string;
+  lat: number;
+  lng: number;
+  capacity: number;
+  teams: string[];
+}
+
+export interface NearestMetro {
+  nameAr: string;
+  lineNameAr: string;
+  lineColor: string;
+  distKm: number;
+  routeUrl: string;
+}
+
+export interface NearestStadium {
+  nameAr: string;
+  city: string;
+  teams: string[];
+  distKm: number;
+  routeUrl: string;
+}
+
 export interface Transaction {
   id: string;
   city: string;
@@ -20,12 +56,15 @@ export interface PriceEstimate {
   priceRangeMin: number;
   priceRangeMax: number;
   locationScore: number;
+  metroBonus?: number;      // مقدار الزيادة في الدرجة بسبب القرب من المترو
   cityName: string;
   areaClassification: string;
   dataSource: "real" | "simulation";
   transactionCount?: number;
-  confidence?: number;    // 0–100 مستوى الثقة بالتقدير
-  nearbyCount?: number;   // عدد الصفقات ضمن 20 كم (مع إحداثيات)
+  confidence?: number;      // 0–100 مستوى الثقة بالتقدير
+  nearbyCount?: number;     // عدد الصفقات ضمن 20 كم (مع إحداثيات)
+  nearestMetro?: NearestMetro;
+  nearestStadium?: NearestStadium;
 }
 
 // ── مدن مرجعية ────────────────────────────────────────────────────────────────
@@ -203,12 +242,34 @@ function estimatePriceFromTransactions(
   };
 }
 
+// ── أقرب نقطة اهتمام ──────────────────────────────────────────────────────────
+function findNearestItem<T extends { lat: number; lng: number }>(
+  coords: Coordinates,
+  items: T[]
+): (T & { distKm: number }) | null {
+  if (!items || items.length === 0) return null;
+  let best: (T & { distKm: number }) | null = null;
+  for (const item of items) {
+    const distKm = haversineDistance(coords, { lat: item.lat, lng: item.lng });
+    if (!best || distKm < best.distKm) {
+      best = { ...item, distKm };
+    }
+  }
+  return best;
+}
+
+function buildRouteUrl(from: Coordinates, to: { lat: number; lng: number }): string {
+  return `https://www.google.com/maps/dir/${from.lat},${from.lng}/${to.lat},${to.lng}`;
+}
+
 // ── الدالة الرئيسية ───────────────────────────────────────────────────────────
 export function estimatePrice(
   coords: Coordinates,
   transactions: Transaction[] = [],
   requestedPropertyType?: string,
-  requestedArea?: number
+  requestedArea?: number,
+  metroStations?: MetroStation[],
+  stadiums?: Stadium[]
 ): PriceEstimate {
   const { city, distFromCenter } = detectCity(coords);
 
@@ -223,6 +284,51 @@ export function estimatePrice(
   } else {
     cityName = "منطقة أخرى";
     locationScore = 3;
+  }
+
+  // ── تأثير المترو على الموقع (الرياض فقط) ─────────────────────────────────
+  let metroBonus = 0;
+  let nearestMetro: NearestMetro | undefined;
+
+  if (metroStations && metroStations.length > 0 && cityName === "الرياض") {
+    const nearest = findNearestItem(coords, metroStations);
+    if (nearest) {
+      if (nearest.distKm <= 0.5)      metroBonus = 1.5;
+      else if (nearest.distKm <= 1.0) metroBonus = 1.0;
+      else if (nearest.distKm <= 2.0) metroBonus = 0.5;
+      else if (nearest.distKm <= 5.0) metroBonus = 0.2;
+
+      nearestMetro = {
+        nameAr: nearest.nameAr,
+        lineNameAr: nearest.lineNameAr,
+        lineColor: nearest.lineColor,
+        distKm: Math.round(nearest.distKm * 100) / 100,
+        routeUrl: buildRouteUrl(coords, nearest),
+      };
+    }
+  }
+
+  if (metroBonus > 0) {
+    locationScore = Math.round(Math.min(10, locationScore + metroBonus) * 10) / 10;
+  }
+
+  // ── أقرب استاد ────────────────────────────────────────────────────────────
+  let nearestStadium: NearestStadium | undefined;
+
+  if (stadiums && stadiums.length > 0) {
+    // تصفية الاستادات بالمدينة أولاً، وإلا أقرب استاد على الإطلاق
+    const cityStadiums = stadiums.filter((s) => s.city === cityName);
+    const pool = cityStadiums.length > 0 ? cityStadiums : stadiums;
+    const nearest = findNearestItem(coords, pool);
+    if (nearest) {
+      nearestStadium = {
+        nameAr: nearest.nameAr,
+        city: nearest.city,
+        teams: nearest.teams,
+        distKm: Math.round(nearest.distKm * 100) / 100,
+        routeUrl: buildRouteUrl(coords, nearest),
+      };
+    }
   }
 
   if (locationScore >= 8) areaClassification = "منطقة راقية";
@@ -265,12 +371,15 @@ export function estimatePrice(
       priceRangeMin: Math.round(Math.max(pricePerSqm - spread, pricePerSqm * 0.7)),
       priceRangeMax: Math.round(pricePerSqm + spread),
       locationScore,
+      metroBonus: metroBonus > 0 ? metroBonus : undefined,
       cityName,
       areaClassification,
       dataSource: "real",
       transactionCount: count,
       confidence,
       nearbyCount,
+      nearestMetro,
+      nearestStadium,
     };
   }
 
@@ -298,9 +407,12 @@ export function estimatePrice(
     priceRangeMin: Math.round(sale * 0.8),
     priceRangeMax: Math.round(sale * 1.2),
     locationScore,
+    metroBonus: metroBonus > 0 ? metroBonus : undefined,
     cityName,
     areaClassification,
     dataSource: "simulation",
+    nearestMetro,
+    nearestStadium,
   };
 }
 

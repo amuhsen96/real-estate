@@ -5,6 +5,7 @@ import Link from "next/link";
 import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
 import PriceEstimate from "@/components/PriceEstimate";
+import TransportInfo from "@/components/TransportInfo";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 
@@ -92,6 +93,7 @@ export default function Home() {
         {coordinates && (
           <div className="space-y-6">
             <SatelliteView coordinates={coordinates} />
+            <TransportInfo estimate={priceEstimate} />
             <PriceEstimate
               estimate={priceEstimate}
               isLoading={isLoading}

@@ -105,7 +105,14 @@ export default function PriceEstimate({ estimate, isLoading, detectedDistrict }:
         <div className={`${getScoreBg(estimate.locationScore)} border rounded-xl p-4 flex items-center justify-between`}>
           <div>
             <p className="text-sm font-medium text-gray-700">مؤشر جودة الموقع</p>
-            <p className="text-xs text-gray-500 mt-0.5">بناءً على الموقع داخل المدينة</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              بناءً على الموقع داخل المدينة
+              {estimate.metroBonus && estimate.metroBonus > 0 && (
+                <span className="mr-1 text-blue-600 font-medium">
+                  + قرب المترو (+{estimate.metroBonus})
+                </span>
+              )}
+            </p>
           </div>
           <div className={`text-3xl font-bold ${getScoreColor(estimate.locationScore)}`}>
             {estimate.locationScore}
