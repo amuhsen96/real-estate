@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 import type { Transaction } from "@/lib/priceSimulator";
+
+// رفع حد حجم الطلب إلى 20MB لدعم ملفات Excel الكبيرة
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 const DB_PATH = join(process.cwd(), "data", "transactions.json");
 
@@ -14,15 +18,23 @@ function readTransactions(): Transaction[] {
 }
 
 function writeTransactions(transactions: Transaction[]) {
+  mkdirSync(dirname(DB_PATH), { recursive: true });
   writeFileSync(DB_PATH, JSON.stringify(transactions, null, 2), "utf-8");
 }
 
+function detectSep(line: string): string {
+  if (line.includes("\t")) return "\t";
+  if (line.includes(";")) return ";";
+  return ",";
+}
+
 function parseCSV(raw: string): Transaction[] {
-  const lines = raw.trim().split(/\r?\n/).filter((l) => l.trim());
+  // إزالة BOM إذا وُجد
+  const cleaned = raw.replace(/^\uFEFF/, "").trim();
+  const lines = cleaned.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) return [];
 
-  // Detect separator: tab (Excel paste) or comma
-  const sep = lines[0].includes("\t") ? "\t" : ",";
+  const sep = detectSep(lines[0]);
 
   // Arabic and English header aliases
   const HEADERS: Record<string, string> = {
@@ -139,8 +151,9 @@ export async function POST(request: NextRequest) {
     transactions.push(tx);
     writeTransactions(transactions);
     return NextResponse.json(tx, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "خطأ في معالجة الطلب" }, { status: 500 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: `خطأ في معالجة الطلب: ${msg}` }, { status: 500 });
   }
 }
 
