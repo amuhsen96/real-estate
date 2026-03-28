@@ -24,27 +24,16 @@ export default function Home() {
     setDetectedDistrict(null);
 
     try {
-      // استدعاء الأسعار وكشف الحي بالتوازي
-      const [priceRes, geoRes] = await Promise.all([
-        fetch("/api/prices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            lat: params.lat,
-            lng: params.lng,
-            propertyType: params.propertyType,
-            area: params.area,
-          }),
+      const priceRes = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lat: params.lat,
+          lng: params.lng,
+          propertyType: params.propertyType,
+          area: params.area,
         }),
-        // إذا وُجد placeName في الرابط فلا حاجة لـ Nominatim
-        params.placeName
-          ? Promise.resolve(null)
-          : fetch("/api/reverse-geocode", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ lat: params.lat, lng: params.lng }),
-            }),
-      ]);
+      });
 
       if (!priceRes.ok) {
         const data = await priceRes.json();
@@ -52,15 +41,10 @@ export default function Home() {
         return;
       }
 
-      setPriceEstimate(await priceRes.json());
-
-      // تحديد الحي: من الرابط أولاً، ثم Nominatim
-      if (params.placeName) {
-        setDetectedDistrict(params.placeName);
-      } else if (geoRes && geoRes.ok) {
-        const geoData = await geoRes.json();
-        setDetectedDistrict(geoData.district ?? null);
-      }
+      // الحي يأتي من استجابة الأسعار (كشفه الـ API داخلياً)
+      const { detectedDistrict: district, ...estimate } = await priceRes.json();
+      setPriceEstimate(estimate);
+      setDetectedDistrict(params.placeName ?? district ?? null);
     } catch {
       setError("حدث خطأ في الاتصال بالخادم.");
     } finally {

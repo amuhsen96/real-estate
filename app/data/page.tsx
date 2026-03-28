@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import type { Transaction } from "@/lib/priceSimulator";
 
-type Tab = "manual" | "csv";
+type Tab = "manual" | "csv" | "file";
 
 const PROPERTY_TYPES = ["شقة", "فيلا", "دور", "أرض", "تجاري", "استوديو", "غرفة", "غير محدد"];
 
@@ -35,6 +35,13 @@ export default function DataPage() {
 
   // CSV state
   const [csvText, setCsvText] = useState("");
+
+  // File upload state
+  const [fileStatus, setFileStatus] = useState<"idle" | "reading" | "ready" | "error">("idle");
+  const [fileName, setFileName] = useState<string>("");
+  const [parsedCsv, setParsedCsv] = useState<string>("");
+  const [filePreviewRows, setFilePreviewRows] = useState<string[][]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -107,6 +114,77 @@ export default function DataPage() {
     }
   }
 
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    setFileStatus("reading");
+    setParsedCsv("");
+    setFilePreviewRows([]);
+
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      let csvContent = "";
+
+      if (ext === "csv" || ext === "txt") {
+        // CSV: قراءة مباشرة كنص
+        csvContent = await file.text();
+      } else if (ext === "xlsx" || ext === "xls") {
+        // Excel: تحويل باستخدام SheetJS
+        const XLSX = await import("xlsx");
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvContent = XLSX.utils.sheet_to_csv(ws);
+      } else {
+        setFileStatus("error");
+        showMessage("error", "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
+        return;
+      }
+
+      // معاينة أول 5 صفوف
+      const rows = csvContent
+        .trim()
+        .split(/\r?\n/)
+        .slice(0, 6)
+        .map((r) => r.split(/[,\t]/).map((c) => c.trim().replace(/^["']|["']$/g, "")));
+
+      setParsedCsv(csvContent);
+      setFilePreviewRows(rows);
+      setFileStatus("ready");
+    } catch {
+      setFileStatus("error");
+      showMessage("error", "تعذّر قراءة الملف. تأكد من أن الملف غير تالف.");
+    }
+  }
+
+  async function handleFileImport() {
+    if (!parsedCsv) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "csv", data: parsedCsv }),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        showMessage("success", `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
+        setParsedCsv("");
+        setFilePreviewRows([]);
+        setFileName("");
+        setFileStatus("idle");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        await loadTransactions();
+      } else {
+        showMessage("error", d.error ?? "حدث خطأ في معالجة الملف");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm("هل أنت متأكد من حذف هذه الصفقة؟")) return;
     const res = await fetch(`/api/transactions?id=${id}`, { method: "DELETE" });
@@ -153,7 +231,7 @@ export default function DataPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-gray-100">
-            {(["manual", "csv"] as Tab[]).map((t) => (
+            {(["manual", "csv", "file"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -163,7 +241,7 @@ export default function DataPage() {
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                {t === "manual" ? "إضافة يدوية" : "لصق CSV / Excel"}
+                {t === "manual" ? "إضافة يدوية" : t === "csv" ? "لصق CSV / Excel" : "رفع ملف"}
               </button>
             ))}
           </div>
@@ -277,7 +355,7 @@ export default function DataPage() {
                   {saving ? "جاري الحفظ..." : "إضافة الصفقة"}
                 </button>
               </form>
-            ) : (
+            ) : tab === "csv" ? (
               <div className="space-y-4">
                 {/* Format hint */}
                 <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-2">
@@ -305,6 +383,89 @@ export default function DataPage() {
                   className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   {saving ? "جاري الاستيراد..." : "استيراد البيانات"}
+                </button>
+              </div>
+            ) : (
+              /* ─── تبويب رفع ملف ─── */
+              <div className="space-y-4">
+                {/* Format guide */}
+                <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-1">
+                  <p className="font-medium text-gray-700">الصيغ المقبولة: Excel (.xlsx / .xls) أو CSV (.csv)</p>
+                  <p>يجب أن يحتوي الملف على أعمدة: المدينة، الحي، النوع، المساحة، السعر</p>
+                  <p className="text-gray-500">الأعمدة الاختيارية: خط العرض، خط الطول، التاريخ، المصدر</p>
+                </div>
+
+                {/* Drop zone / file input */}
+                <label
+                  className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 cursor-pointer transition-colors ${
+                    fileStatus === "ready"
+                      ? "border-green-300 bg-green-50"
+                      : fileStatus === "error"
+                      ? "border-red-300 bg-red-50"
+                      : "border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50"
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {fileStatus === "idle" && (
+                    <>
+                      <span className="text-3xl">📂</span>
+                      <p className="text-sm text-gray-600">انقر لاختيار ملف أو اسحب وأفلت هنا</p>
+                      <p className="text-xs text-gray-400">.xlsx — .xls — .csv</p>
+                    </>
+                  )}
+                  {fileStatus === "reading" && (
+                    <>
+                      <span className="text-3xl animate-pulse">⏳</span>
+                      <p className="text-sm text-gray-500">جاري قراءة الملف...</p>
+                    </>
+                  )}
+                  {fileStatus === "ready" && (
+                    <>
+                      <span className="text-3xl">✅</span>
+                      <p className="text-sm text-green-700 font-medium">{fileName}</p>
+                      <p className="text-xs text-green-600">تم تحليل الملف — راجع المعاينة أدناه</p>
+                    </>
+                  )}
+                  {fileStatus === "error" && (
+                    <>
+                      <span className="text-3xl">❌</span>
+                      <p className="text-sm text-red-600">تعذّرت القراءة — انقر لاختيار ملف آخر</p>
+                    </>
+                  )}
+                </label>
+
+                {/* Preview table */}
+                {filePreviewRows.length > 0 && (
+                  <div className="overflow-x-auto rounded-xl border border-gray-100">
+                    <p className="text-xs text-gray-500 px-3 pt-2 pb-1">معاينة (أول 5 صفوف)</p>
+                    <table className="w-full text-xs" dir="ltr">
+                      <tbody>
+                        {filePreviewRows.map((row, ri) => (
+                          <tr key={ri} className={ri === 0 ? "bg-gray-100 font-medium" : "border-t border-gray-50"}>
+                            {row.map((cell, ci) => (
+                              <td key={ci} className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleFileImport}
+                  disabled={saving || fileStatus !== "ready"}
+                  className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? "جاري الاستيراد..." : "استيراد الملف"}
                 </button>
               </div>
             )}
