@@ -133,13 +133,22 @@ function recencyWeight(dateStr?: string): number {
 
 // ── خوارزمية KNN متعددة المعايير ─────────────────────────────────────────────
 //
-// المعايير المُستخدمة لكل صفقة:
+// الأولوية الأساسية: تطابق (الحي + نوع العقار) معاً
+//
+// للصفقات بدون إحداثيات — جدول الأوزان الأساسية:
+//   نفس الحي + نفس النوع  → 6.0  ← المعيار الأساسي
+//   نفس الحي + نوع مختلف  → 1.0
+//   حي مختلف + نفس النوع  → 0.8
+//   حي مختلف + نوع مختلف  → 0.1
+//   (بدون معرفة الحي) نفس النوع → 1.0 | نوع مختلف → 0.4
+//   (بدون معرفة النوع) نفس الحي → 2.0 | حي مختلف  → 0.3
+//
+// للصفقات ذات الإحداثيات:
 //   1. المسافة الجغرافية  → وزن عكسي تربيعي (أقرب = أثقل)
-//   2. تطابق نوع العقار   → مضاعف 1.5 عند التطابق
-//   3. تشابه المساحة      → خصم حتى 30% عند التباين الكبير
-//   4. حداثة الصفقة       → مضاعف من 0.85 إلى 1.4
-//   5. تطابق الحي         → مضاعف 1.8 للصفقات ذات الإحداثيات (تعزيز إضافي)
-//                           ووزن أساسي مرتفع 4× للصفقات بدون إحداثيات في نفس الحي
+//   2. تطابق نوع العقار   → 2.0× عند التطابق، 0.5× عند الاختلاف
+//   3. تطابق الحي         → 1.8× عند التطابق، 0.9× عند الاختلاف
+//   4. تشابه المساحة      → خصم حتى 30% عند التباين الكبير
+//   5. حداثة الصفقة       → مضاعف من 0.85 إلى 1.4
 //
 // النتيجة: متوسط مرجّح لـ pricePerSqm + درجة الثقة
 //
@@ -170,15 +179,19 @@ function estimatePriceFromTransactions(
     // 1. وزن المسافة (عكسي تربيعي)
     const wDist = 1 / Math.max(distKm, 0.05) ** 2;
 
-    // 2. وزن نوع العقار
+    // 2. وزن نوع العقار (أساسي: 2.0 تطابق، 0.5 اختلاف)
     const wType =
       requestedPropertyType && requestedPropertyType !== "غير محدد"
-        ? t.propertyType === requestedPropertyType
-          ? 1.5
-          : 0.7
+        ? t.propertyType === requestedPropertyType ? 2.0 : 0.5
         : 1.0;
 
-    // 3. وزن تشابه المساحة
+    // 3. وزن الحي (أساسي: 1.8 تطابق، 0.9 اختلاف)
+    const wDistrict =
+      requestedDistrict
+        ? t.district === requestedDistrict ? 1.8 : 0.9
+        : 1.0;
+
+    // 4. وزن تشابه المساحة
     let wArea = 1.0;
     if (requestedArea && requestedArea > 0) {
       const ratio =
@@ -186,35 +199,41 @@ function estimatePriceFromTransactions(
       wArea = Math.max(0.5, 1 - ratio * 0.5);
     }
 
-    // 4. وزن الحداثة
+    // 5. وزن الحداثة
     const wRecency = recencyWeight(t.date);
 
-    // 5. وزن الحي (تعزيز عند تطابق الحي مع إحداثيات معروفة)
-    const wDistrict = (requestedDistrict && t.district === requestedDistrict) ? 1.8 : 1.0;
-
-    const totalW = wDist * wType * wArea * wRecency * wDistrict;
+    const totalW = wDist * wType * wDistrict * wArea * wRecency;
     weighted.push({ ppsm: t.pricePerSqm, w: totalW, distKm });
   }
 
-  // ── صفقات المدينة بدون إحداثيات ─────────────────────────────────────────
-  // الوزن الأساسي يعتمد على تطابق الحي: صفقات نفس الحي تأخذ أولوية عالية
+  // ── صفقات بدون إحداثيات: الوزن يعتمد على (الحي + النوع) معاً ─────────────
   const withoutCoords = transactions.filter((t) => t.lat == null || t.lng == null);
   for (const t of withoutCoords) {
-    const wType =
-      requestedPropertyType && requestedPropertyType !== "غير محدد"
-        ? t.propertyType === requestedPropertyType ? 1.2 : 0.6
-        : 1.0;
     const wRecency = recencyWeight(t.date);
 
-    // الوزن الأساسي: عالٍ جداً إذا تطابق الحي، منخفض جداً إذا اختلف
+    const hasDistrictFilter = !!requestedDistrict;
+    const hasTypeFilter = !!(requestedPropertyType && requestedPropertyType !== "غير محدد");
+    const sameDistrict = hasDistrictFilter && t.district === requestedDistrict;
+    const sameType = hasTypeFilter && t.propertyType === requestedPropertyType;
+
     let baseW: number;
-    if (requestedDistrict) {
-      baseW = t.district === requestedDistrict ? 4.0 : 0.2;
+    if (hasDistrictFilter && hasTypeFilter) {
+      // كلا المعيارين معروفان → جدول الأولويات
+      if (sameDistrict && sameType)   baseW = 6.0; // ← الأساسي
+      else if (sameDistrict)          baseW = 1.0; // نفس الحي، نوع مختلف
+      else if (sameType)              baseW = 0.8; // نفس النوع، حي مختلف
+      else                            baseW = 0.1; // لا شيء يتطابق
+    } else if (hasDistrictFilter) {
+      // نعرف الحي فقط
+      baseW = sameDistrict ? 2.0 : 0.3;
+    } else if (hasTypeFilter) {
+      // نعرف النوع فقط
+      baseW = sameType ? 1.0 : 0.4;
     } else {
-      baseW = 0.5; // fallback: وزن موحّد عند عدم معرفة الحي
+      baseW = 0.5; // لا نعرف شيئاً
     }
 
-    weighted.push({ ppsm: t.pricePerSqm, w: baseW * wType * wRecency, distKm: Infinity });
+    weighted.push({ ppsm: t.pricePerSqm, w: baseW * wRecency, distKm: Infinity });
   }
 
   if (weighted.length === 0) return null;
