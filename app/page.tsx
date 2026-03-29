@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
 import PriceEstimate from "@/components/PriceEstimate";
@@ -10,6 +11,12 @@ import PropertyReport, { type ReportData } from "@/components/PropertyReport";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 
+// تُحمَّل على العميل فقط لأنها تستخدم html2canvas + jsPDF
+const ExportPDFButtons = dynamic(
+  () => import("@/components/ExportPDFButtons"),
+  { ssr: false }
+);
+
 export default function Home() {
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [priceEstimate, setPriceEstimate] = useState<PriceEstimateType | null>(null);
@@ -17,7 +24,6 @@ export default function Home() {
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState<"ar" | "en" | null>(null);
 
   const reportArRef = useRef<HTMLDivElement>(null);
   const reportEnRef = useRef<HTMLDivElement>(null);
@@ -58,21 +64,6 @@ export default function Home() {
       setIsLoading(false);
     }
   };
-
-  const handleExport = useCallback(async (lang: "ar" | "en") => {
-    if (!coordinates || !priceEstimate) return;
-    setExporting(lang);
-    try {
-      const { exportReportPDF } = await import("@/lib/exportPDF");
-      const ref = lang === "ar" ? reportArRef : reportEnRef;
-      if (!ref.current) return;
-      const city = priceEstimate.cityName ?? "report";
-      const date = new Date().toISOString().slice(0, 10);
-      await exportReportPDF(ref.current, `property-report-${lang}-${city}-${date}.pdf`);
-    } finally {
-      setExporting(null);
-    }
-  }, [coordinates, priceEstimate]);
 
   const reportData: ReportData | null =
     coordinates && priceEstimate
@@ -127,38 +118,17 @@ export default function Home() {
             />
 
             {/* ── أزرار تصدير PDF ── */}
-            {priceEstimate && !isLoading && (
+            {priceEstimate && !isLoading && reportData && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <p className="text-sm font-semibold text-gray-700 mb-1">تصدير تقرير PDF</p>
                 <p className="text-xs text-gray-400 mb-4">
                   يتضمن التقرير: تفاصيل العقار · الخريطة مع المترو والاستاد · تقديرات الأسعار
                 </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => handleExport("ar")}
-                    disabled={exporting !== null}
-                    className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors"
-                  >
-                    {exporting === "ar" ? (
-                      <span className="animate-spin">⏳</span>
-                    ) : (
-                      <span>📄</span>
-                    )}
-                    {exporting === "ar" ? "جاري التصدير..." : "تقرير عربي"}
-                  </button>
-                  <button
-                    onClick={() => handleExport("en")}
-                    disabled={exporting !== null}
-                    className="flex-1 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-colors"
-                  >
-                    {exporting === "en" ? (
-                      <span className="animate-spin">⏳</span>
-                    ) : (
-                      <span>📄</span>
-                    )}
-                    {exporting === "en" ? "Exporting..." : "English Report"}
-                  </button>
-                </div>
+                <ExportPDFButtons
+                  reportData={reportData}
+                  arRef={reportArRef}
+                  enRef={reportEnRef}
+                />
               </div>
             )}
           </div>

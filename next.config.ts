@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "20mb",
     },
   },
+  serverExternalPackages: ["html2canvas", "jspdf"],
 };
 
 export default nextConfig;
