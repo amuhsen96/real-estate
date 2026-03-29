@@ -44,6 +44,8 @@ export interface Transaction {
   area: number;        // م²
   price: number;       // الريال
   pricePerSqm: number; // الريال/م²
+  dealType?: string;   // بيع | إيجار
+  region?: string;     // المنطقة الإدارية
   lat?: number;
   lng?: number;
   date?: string;
