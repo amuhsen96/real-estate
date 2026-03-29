@@ -1,21 +1,15 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
 import PriceEstimate from "@/components/PriceEstimate";
 import TransportInfo from "@/components/TransportInfo";
-import PropertyReport, { type ReportData } from "@/components/PropertyReport";
+import ExportPDFButtons from "@/components/ExportPDFButtons";
+import type { ReportData } from "@/components/PropertyReport";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
-
-// تُحمَّل على العميل فقط لأنها تستخدم html2canvas + jsPDF
-const ExportPDFButtons = dynamic(
-  () => import("@/components/ExportPDFButtons"),
-  { ssr: false }
-);
 
 export default function Home() {
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
@@ -24,9 +18,6 @@ export default function Home() {
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const reportArRef = useRef<HTMLDivElement>(null);
-  const reportEnRef = useRef<HTMLDivElement>(null);
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
@@ -117,18 +108,14 @@ export default function Home() {
               detectedDistrict={detectedDistrict}
             />
 
-            {/* ── أزرار تصدير PDF ── */}
+            {/* أزرار تصدير PDF */}
             {priceEstimate && !isLoading && reportData && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <p className="text-sm font-semibold text-gray-700 mb-1">تصدير تقرير PDF</p>
                 <p className="text-xs text-gray-400 mb-4">
                   يتضمن التقرير: تفاصيل العقار · الخريطة مع المترو والاستاد · تقديرات الأسعار
                 </p>
-                <ExportPDFButtons
-                  reportData={reportData}
-                  arRef={reportArRef}
-                  enRef={reportEnRef}
-                />
+                <ExportPDFButtons reportData={reportData} />
               </div>
             )}
           </div>
@@ -142,24 +129,6 @@ export default function Home() {
           </p>
         </footer>
       </div>
-
-      {/* ── التقارير المخفية للطباعة ── */}
-      {reportData && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: "-9999px",
-            visibility: "hidden",
-            pointerEvents: "none",
-            zIndex: -1,
-          }}
-          aria-hidden="true"
-        >
-          <PropertyReport data={reportData} lang="ar" reportRef={reportArRef} />
-          <PropertyReport data={reportData} lang="en" reportRef={reportEnRef} />
-        </div>
-      )}
     </div>
   );
 }
