@@ -57,7 +57,13 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Link
+            href="/analyze"
+            className="text-xs bg-white border border-gray-200 text-gray-600 hover:text-green-600 hover:border-green-300 px-4 py-2 rounded-full shadow-sm transition-colors"
+          >
+            تحليل الأسعار ←
+          </Link>
           <Link
             href="/data"
             className="text-xs bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-300 px-4 py-2 rounded-full shadow-sm transition-colors"
