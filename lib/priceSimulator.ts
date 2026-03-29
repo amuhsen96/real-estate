@@ -67,6 +67,14 @@ export interface PriceEstimate {
   nearestStadium?: NearestStadium;
 }
 
+// ── تطبيع اسم المدينة (يزيل بادئات: مدينة / محافظة / منطقة) ─────────────────
+function normalizeCityName(name: string): string {
+  return name
+    .trim()
+    .replace(/^(مدينة|محافظة|منطقة)\s+/u, "")
+    .trim();
+}
+
 // ── مدن مرجعية ────────────────────────────────────────────────────────────────
 const CITY_DATA = [
   { name: "الرياض",          center: { lat: 24.7136, lng: 46.6753 }, radius: 60, basePriceSale: 5500, baseRent: 35000 },
@@ -423,8 +431,12 @@ export function estimatePrice(
     }
   }
 
-  // ── تصفية الصفقات بالمدينة ───────────────────────────────────────────────
-  const cityTx = transactions.filter((t) => t.city === cityName);
+  // ── تصفية الصفقات بالمدينة (مع تطبيع الاسم) ─────────────────────────────
+  const normalCityName = normalizeCityName(cityName);
+  const cityTx = transactions
+    .filter((t) => normalizeCityName(t.city) === normalCityName)
+    // تصفية الأسعار الخاطئة (إيجارات مخزّنة كأسعار بيع أو بيانات غير صحيحة)
+    .filter((t) => t.pricePerSqm >= 300 && t.pricePerSqm <= 100000);
 
   // ── تصنيف المنطقة: سعر المتر الفعلي (أولوية) أو الموقع الجغرافي (احتياطي) ──
   //
@@ -489,21 +501,26 @@ export function estimatePrice(
   if (real) {
     const { pricePerSqm, count, confidence, nearbyCount } = real;
 
-    // نطاق السعر بناءً على التباين الحقيقي في البيانات
-    const cityPrices = cityTx.map((t) => t.pricePerSqm);
-    const avg = cityPrices.reduce((s, p) => s + p, 0) / cityPrices.length;
+    // نطاق السعر: يُستخرج من صفقات نفس النوع في المدينة (أدق من استخدام الكل)
+    const sameTxPool = (requestedPropertyType && requestedPropertyType !== "غير محدد")
+      ? cityTx.filter((t) => t.propertyType === requestedPropertyType)
+      : cityTx;
+    const poolPrices = sameTxPool.map((t) => t.pricePerSqm);
+    const poolAvg = poolPrices.length > 0
+      ? poolPrices.reduce((s, p) => s + p, 0) / poolPrices.length
+      : pricePerSqm;
     const stdDev =
-      cityPrices.length > 1
-        ? Math.sqrt(
-            cityPrices.reduce((s, p) => s + (p - avg) ** 2, 0) / cityPrices.length
-          )
-        : avg * 0.15;
+      poolPrices.length > 1
+        ? Math.sqrt(poolPrices.reduce((s, p) => s + (p - poolAvg) ** 2, 0) / poolPrices.length)
+        : pricePerSqm * 0.15;
 
-    const spread = Math.max(stdDev, pricePerSqm * 0.1);
+    // النطاق: ±انحراف معياري، بحد أدنى 10% من السعر
+    const spread = Math.max(stdDev * 0.5, pricePerSqm * 0.1);
 
-    // الإيجار: يعتمد على المساحة المطلوبة أو 150م² كإفتراض
+    // الإيجار: عائد سنوي 7% ÷ 12 شهر
     const refArea = requestedArea ?? 150;
-    const monthlyRent = Math.round(pricePerSqm * refArea * 0.006);
+    const annualYield = 0.07;
+    const monthlyRent = Math.round(pricePerSqm * refArea * (annualYield / 12));
 
     return {
       pricePerSqmSale: Math.round(pricePerSqm),
