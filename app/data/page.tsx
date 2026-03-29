@@ -37,9 +37,9 @@ export default function DataPage() {
   const [csvText, setCsvText] = useState("");
 
   // File upload state
-  const [fileStatus, setFileStatus] = useState<"idle" | "reading" | "ready" | "error">("idle");
+  const [fileStatus, setFileStatus] = useState<"idle" | "ready" | "error">("idle");
   const [fileName, setFileName] = useState<string>("");
-  const [parsedCsv, setParsedCsv] = useState<string>("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewRows, setFilePreviewRows] = useState<string[][]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -114,73 +114,29 @@ export default function DataPage() {
     }
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setFileName(file.name);
-    setFileStatus("reading");
-    setParsedCsv("");
-    setFilePreviewRows([]);
-
-    try {
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      let csvContent = "";
-
-      if (ext === "csv" || ext === "txt") {
-        csvContent = await file.text();
-      } else if (ext === "xlsx" || ext === "xls") {
-        const XLSX = await import("xlsx");
-        const buffer = await file.arrayBuffer();
-        // استخدام Uint8Array بدلاً من ArrayBuffer مباشرة
-        const wb = XLSX.read(new Uint8Array(buffer), { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        // تحويل لمصفوفة صفوف بدلاً من نص CSV لتجنب مشاكل الفصل
-        const rows: string[][] = XLSX.utils.sheet_to_json(ws, {
-          header: 1,
-          defval: "",
-          raw: false,
-        }) as string[][];
-        // تحويل لـ CSV بفاصلة واضحة
-        csvContent = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-      } else {
-        setFileStatus("error");
-        showMessage("error", "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
-        return;
-      }
-
-      // إزالة BOM وتنظيف النص
-      csvContent = csvContent.replace(/^\uFEFF/, "").trim();
-
-      if (!csvContent) {
-        setFileStatus("error");
-        showMessage("error", "الملف فارغ أو لا يحتوي على بيانات.");
-        return;
-      }
-
-      // معاينة أول 5 صفوف
-      const allRows = csvContent
-        .split(/\r?\n/)
-        .slice(0, 6)
-        .map((r) => r.split(",").map((c) => c.trim().replace(/^"|"$/g, "")));
-
-      setParsedCsv(csvContent);
-      setFilePreviewRows(allRows);
-      setFileStatus("ready");
-    } catch (err) {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["xlsx", "xls", "csv", "txt"].includes(ext ?? "")) {
       setFileStatus("error");
-      const msg = err instanceof Error ? err.message : "خطأ غير معروف";
-      showMessage("error", `تعذّر قراءة الملف: ${msg}`);
+      showMessage("error", "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
+      return;
     }
+
+    setFileName(file.name);
+    setSelectedFile(file);
+    setFilePreviewRows([]);
+    setFileStatus("ready");
   }
 
   async function handleFileImport() {
-    if (!parsedCsv) return;
+    if (!selectedFile) return;
     setSaving(true);
     try {
-      // إرسال كـ FormData لتجنب حد حجم JSON Body
       const form = new FormData();
-      form.append("data", parsedCsv);
+      form.append("file", selectedFile);
 
       const res = await fetch("/api/transactions/upload", {
         method: "POST",
@@ -189,8 +145,8 @@ export default function DataPage() {
       const d = await res.json();
       if (res.ok) {
         showMessage("success", `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
-        setParsedCsv("");
-        setFilePreviewRows([]);
+        setSelectedFile(null);
+        setFilePreviewRows(d.preview ?? []);
         setFileName("");
         setFileStatus("idle");
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -426,7 +382,7 @@ export default function DataPage() {
                 <label
                   className={`flex flex-col items-center justify-center gap-3 border-2 border-dashed rounded-xl p-8 cursor-pointer transition-colors ${
                     fileStatus === "ready"
-                      ? "border-green-300 bg-green-50"
+                      ? "border-blue-300 bg-blue-50"
                       : fileStatus === "error"
                       ? "border-red-300 bg-red-50"
                       : "border-gray-200 bg-gray-50 hover:border-blue-300 hover:bg-blue-50"
@@ -446,17 +402,11 @@ export default function DataPage() {
                       <p className="text-xs text-gray-400">.xlsx — .xls — .csv</p>
                     </>
                   )}
-                  {fileStatus === "reading" && (
-                    <>
-                      <span className="text-3xl animate-pulse">⏳</span>
-                      <p className="text-sm text-gray-500">جاري قراءة الملف...</p>
-                    </>
-                  )}
                   {fileStatus === "ready" && (
                     <>
-                      <span className="text-3xl">✅</span>
+                      <span className="text-3xl">📄</span>
                       <p className="text-sm text-green-700 font-medium">{fileName}</p>
-                      <p className="text-xs text-green-600">تم تحليل الملف — راجع المعاينة أدناه</p>
+                      <p className="text-xs text-green-600">الملف جاهز — اضغط &quot;استيراد الملف&quot; للمتابعة</p>
                     </>
                   )}
                   {fileStatus === "error" && (
@@ -467,10 +417,10 @@ export default function DataPage() {
                   )}
                 </label>
 
-                {/* Preview table */}
+                {/* Preview table — shown after successful import */}
                 {filePreviewRows.length > 0 && (
-                  <div className="overflow-x-auto rounded-xl border border-gray-100">
-                    <p className="text-xs text-gray-500 px-3 pt-2 pb-1">معاينة (أول 5 صفوف)</p>
+                  <div className="overflow-x-auto rounded-xl border border-green-100 bg-green-50">
+                    <p className="text-xs text-green-700 font-medium px-3 pt-2 pb-1">معاينة الصفوف المستوردة</p>
                     <table className="w-full text-xs" dir="ltr">
                       <tbody>
                         {filePreviewRows.map((row, ri) => (
@@ -489,7 +439,7 @@ export default function DataPage() {
 
                 <button
                   onClick={handleFileImport}
-                  disabled={saving || fileStatus !== "ready"}
+                  disabled={saving || !selectedFile}
                   className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
                   {saving ? "جاري الاستيراد..." : "استيراد الملف"}

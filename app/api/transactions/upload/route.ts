@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
+import * as XLSX from "xlsx";
 import type { Transaction } from "@/lib/priceSimulator";
 
 export const dynamic = "force-dynamic";
@@ -38,15 +39,14 @@ const HEADERS: Record<string, string> = {
   المصدر: "source", source: "source",
 };
 
-function parseCSV(raw: string): Transaction[] {
+function parseCSV(raw: string): { transactions: Transaction[]; preview: string[][] } {
   const cleaned = raw.replace(/^\uFEFF/, "").trim();
   const lines = cleaned.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length === 0) return [];
+  if (lines.length === 0) return { transactions: [], preview: [] };
 
   const sep = detectSep(lines[0]);
 
   function splitLine(line: string): string[] {
-    // دعم الخلايا المحاطة بعلامات تنصيص
     const result: string[] = [];
     let current = "";
     let inQuote = false;
@@ -78,6 +78,13 @@ function parseCSV(raw: string): Transaction[] {
   } else {
     colMap = ["city", "district", "propertyType", "area", "price", "lat", "lng"];
     dataLines = lines;
+  }
+
+  // Build preview (up to 5 data rows + header)
+  const preview: string[][] = [];
+  if (hasHeader) preview.push(firstCells);
+  for (const line of dataLines.slice(0, 5)) {
+    preview.push(splitLine(line));
   }
 
   const results: Transaction[] = [];
@@ -113,20 +120,33 @@ function parseCSV(raw: string): Transaction[] {
     });
   }
 
-  return results;
+  return { transactions: results, preview };
 }
 
-// POST — استقبال ملف CSV عبر FormData
+// POST — استقبال ملف خام عبر FormData (xlsx أو csv)
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const data = formData.get("data");
+    const file = formData.get("file");
 
-    if (!data || typeof data !== "string") {
-      return NextResponse.json({ error: "لم يتم إرسال بيانات" }, { status: 400 });
+    if (!file || typeof file === "string") {
+      return NextResponse.json({ error: "لم يتم إرسال ملف" }, { status: 400 });
     }
 
-    const parsed = parseCSV(data);
+    const ext = (file as File).name.split(".").pop()?.toLowerCase();
+    let csvContent: string;
+
+    if (ext === "xlsx" || ext === "xls") {
+      const buf = Buffer.from(await (file as File).arrayBuffer());
+      const wb = XLSX.read(buf, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      csvContent = XLSX.utils.sheet_to_csv(ws);
+    } else {
+      // csv / txt
+      csvContent = await (file as File).text();
+    }
+
+    const { transactions: parsed, preview } = parseCSV(csvContent);
 
     if (parsed.length === 0) {
       return NextResponse.json(
@@ -139,7 +159,7 @@ export async function POST(request: NextRequest) {
     transactions.push(...parsed);
     writeTransactions(transactions);
 
-    return NextResponse.json({ added: parsed.length, total: transactions.length });
+    return NextResponse.json({ added: parsed.length, total: transactions.length, preview });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `خطأ في معالجة الملف: ${msg}` }, { status: 500 });
