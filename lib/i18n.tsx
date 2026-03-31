@@ -17,8 +17,8 @@ export const translations = {
 
   // ── LocationInput ──────────────────────────────────────────────────────────
   locationLabel:   { ar: "الموقع",                         en: "Location" },
-  locationPlaceholder: { ar: "24.7136, 46.6753 أو رابط Google Maps",
-                          en: "24.7136, 46.6753 or Google Maps link" },
+  locationPlaceholder: { ar: "24.7136, 46.6753 أو رابط OpenStreetMap / Google Maps",
+                          en: "24.7136, 46.6753 or OpenStreetMap / Google Maps link" },
   districtLabel:   { ar: "الحي / المنطقة",                 en: "District / Area" },
   districtHint:    { ar: "(اختياري — يحسّن الدقة كثيراً)", en: "(optional — improves accuracy)" },
   districtPlaceholder: { ar: "مثال: إشبيليا، النرجس...",  en: "e.g. Al-Nargis, Al-Malqa..." },
@@ -39,7 +39,7 @@ export const translations = {
 
   // ── SatelliteView ─────────────────────────────────────────────────────────
   aerialTitle:     { ar: "الصورة الجوية للموقع",           en: "Aerial View" },
-  openInMaps:      { ar: "فتح في Google Maps",             en: "Open in Google Maps" },
+  openInMaps:      { ar: "فتح في الخريطة",                  en: "Open in Map" },
 
   // ── PriceEstimate ─────────────────────────────────────────────────────────
   priceTitle:      { ar: "تقديرات أسعار العقارات",         en: "Property Price Estimates" },

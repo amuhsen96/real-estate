@@ -97,8 +97,8 @@ export default function LocationInput({ onSearch, isLoading }: LocationInputProp
             <p>{t("formatsLabel")}</p>
             <ul className="list-disc list-inside space-y-0.5 mx-2">
               <li dir="ltr" className={lang === "ar" ? "text-right" : ""}>24.7136, 46.6753</li>
+              <li dir="ltr" className={lang === "ar" ? "text-right" : ""}>https://www.openstreetmap.org/#map=17/24.71/46.67</li>
               <li dir="ltr" className={lang === "ar" ? "text-right" : ""}>https://maps.google.com/...@24.71,46.67...</li>
-              <li dir="ltr" className={lang === "ar" ? "text-right" : ""}>https://maps.app.goo.gl/...</li>
             </ul>
           </div>
         </form>
