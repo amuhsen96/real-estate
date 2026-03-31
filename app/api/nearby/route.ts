@@ -11,6 +11,8 @@ interface CategoryResult {
     vicinity: string;
     rating: number | null;
     distance: number | null;
+    lat?: number;
+    lng?: number;
   }[];
 }
 
@@ -135,7 +137,13 @@ async function searchCategory(
         const distance = elLat != null && elLng != null
           ? calcDistance(lat, lng, elLat, elLng)
           : null;
-        return { name, vicinity: el.tags?.["addr:street"] ?? "", rating: null, distance };
+        return {
+          name,
+          vicinity: el.tags?.["addr:street"] ?? "",
+          rating: null,
+          distance,
+          ...(elLat != null && elLng != null ? { lat: elLat, lng: elLng } : {}),
+        };
       })
       .filter((p) => p.name)
       .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))

@@ -6,6 +6,7 @@ import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
 import PriceEstimate from "@/components/PriceEstimate";
 import TransportInfo from "@/components/TransportInfo";
+import NearbyPlaces from "@/components/NearbyPlaces";
 import ExportPDFButtons from "@/components/ExportPDFButtons";
 import LanguageToggle from "@/components/LanguageToggle";
 import type { ReportData } from "@/components/PropertyReport";
@@ -21,14 +22,29 @@ export default function Home() {
   const [searchParams, setSearchParams] = useState<SearchParams | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [nearbyData, setNearbyData] = useState<{ category: string; categoryAr: string; icon: string; places: { name: string; vicinity: string; rating: number | null; distance: number | null; lat?: number; lng?: number }[] }[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
     setSearchParams(params);
     setIsLoading(true);
+    setNearbyLoading(true);
+    setNearbyData([]);
     setError("");
     setPriceEstimate(null);
     setDetectedDistrict(null);
+
+    // Fetch nearby services in parallel
+    fetch("/api/nearby", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat: params.lat, lng: params.lng }),
+    })
+      .then((r) => r.json())
+      .then((d) => { if (d.categories) setNearbyData(d.categories); })
+      .catch(() => {})
+      .finally(() => setNearbyLoading(false));
     try {
       const priceRes = await fetch("/api/prices", {
         method: "POST",
@@ -69,6 +85,7 @@ export default function Home() {
         {coordinates && (
           <div className="space-y-6">
             <SatelliteView coordinates={coordinates} />
+            <NearbyPlaces coordinates={coordinates} categories={nearbyData} isLoading={nearbyLoading} />
             <TransportInfo estimate={priceEstimate} />
             <PriceEstimate estimate={priceEstimate} isLoading={isLoading} detectedDistrict={detectedDistrict} />
             {priceEstimate && !isLoading && reportData && (
