@@ -77,6 +77,9 @@ export default function NearbyMap({ coordinates, categories }: NearbyMapProps) {
     const map = L.map(mapRef.current).setView([coordinates.lat, coordinates.lng], 13);
     mapInstanceRef.current = map;
 
+    // Fix gray tiles: force recalculate after container is fully rendered
+    setTimeout(() => map.invalidateSize(), 200);
+
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,

@@ -80,7 +80,11 @@ const CATEGORIES = [
 ];
 
 const MAX_RADIUS = 5000;
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const OVERPASS_URLS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
 
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -103,6 +107,28 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
+async function fetchOverpass(query: string): Promise<{ elements: OverpassElement[] } | null> {
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(20000),
+      });
+
+      // Overpass returns HTML error pages when busy - skip to next mirror
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || !contentType.includes("json")) continue;
+
+      return await res.json();
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 async function searchCategory(
   lat: number,
   lng: number,
@@ -114,45 +140,32 @@ async function searchCategory(
     .replace(/LNG/g, String(lng));
 
   const overpassQuery = `[out:json][timeout:15];${rawQuery}out center 20;`;
+  const empty: CategoryResult = { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places: [] };
 
-  try {
-    const res = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(overpassQuery)}`,
-      signal: AbortSignal.timeout(20000),
-    });
+  const data = await fetchOverpass(overpassQuery);
+  if (!data) return empty;
 
-    if (!res.ok) {
-      return { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places: [] };
-    }
+  const places = (data.elements ?? [])
+    .map((el) => {
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon ?? el.center?.lon;
+      const name = el.tags?.["name:ar"] ?? el.tags?.["name"] ?? "";
+      const distance = elLat != null && elLng != null
+        ? calcDistance(lat, lng, elLat, elLng)
+        : null;
+      return {
+        name,
+        vicinity: el.tags?.["addr:street"] ?? "",
+        rating: null,
+        distance,
+        ...(elLat != null && elLng != null ? { lat: elLat, lng: elLng } : {}),
+      };
+    })
+    .filter((p) => p.name)
+    .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))
+    .slice(0, 20);
 
-    const data: { elements: OverpassElement[] } = await res.json();
-
-    const places = (data.elements ?? [])
-      .map((el) => {
-        const elLat = el.lat ?? el.center?.lat;
-        const elLng = el.lon ?? el.center?.lon;
-        const name = el.tags?.["name:ar"] ?? el.tags?.["name"] ?? "";
-        const distance = elLat != null && elLng != null
-          ? calcDistance(lat, lng, elLat, elLng)
-          : null;
-        return {
-          name,
-          vicinity: el.tags?.["addr:street"] ?? "",
-          rating: null,
-          distance,
-          ...(elLat != null && elLng != null ? { lat: elLat, lng: elLng } : {}),
-        };
-      })
-      .filter((p) => p.name)
-      .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))
-      .slice(0, 20);
-
-    return { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places };
-  } catch {
-    return { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places: [] };
-  }
+  return { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places };
 }
 
 export async function POST(request: NextRequest) {
