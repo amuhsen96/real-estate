@@ -360,7 +360,7 @@ function findNearestItem<T extends { lat: number; lng: number }>(
 }
 
 function buildRouteUrl(from: Coordinates, to: { lat: number; lng: number }): string {
-  return `https://www.google.com/maps/dir/${from.lat},${from.lng}/${to.lat},${to.lng}`;
+  return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${from.lat},${from.lng};${to.lat},${to.lng}`;
 }
 
 // ── الدالة الرئيسية ───────────────────────────────────────────────────────────

@@ -30,6 +30,15 @@ body {
   font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
 }
 
+/* Leaflet + Tailwind compatibility: Tailwind resets img max-width which breaks tiles */
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}
+.leaflet-container {
+  font-family: inherit;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

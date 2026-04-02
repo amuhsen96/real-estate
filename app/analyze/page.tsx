@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import type { AnalyzeResult, GroupStats } from "@/app/api/analyze/route";
+import { useI18n } from "@/lib/i18n";
+import LanguageToggle from "@/components/LanguageToggle";
 
 function fmt(n: number) {
-  return n.toLocaleString("ar-SA");
+  return n.toLocaleString("en-US");
 }
 
 function StatBadge({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -18,30 +20,32 @@ function StatBadge({ label, value, sub }: { label: string; value: string; sub?: 
   );
 }
 
-function StatsRow({ stats }: { stats: GroupStats }) {
+function StatsRow({ stats, labels }: { stats: GroupStats; labels: Record<string, string> }) {
   return (
     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-2">
-      <StatBadge label="وسيط سعر المتر" value={`${fmt(stats.medianPricePerSqm)}`} sub="ر/م²" />
-      <StatBadge label="متوسط سعر المتر" value={`${fmt(stats.avgPricePerSqm)}`} sub="ر/م²" />
-      <StatBadge label="ربعي أدنى (P25)" value={`${fmt(stats.p25PricePerSqm)}`} sub="ر/م²" />
-      <StatBadge label="ربعي أعلى (P75)" value={`${fmt(stats.p75PricePerSqm)}`} sub="ر/م²" />
-      <StatBadge label="وسيط المساحة" value={`${fmt(stats.medianArea)}`} sub="م²" />
-      <StatBadge label="عدد الصفقات" value={fmt(stats.count)} />
+      <StatBadge label={labels.medianPsqm} value={`${fmt(stats.medianPricePerSqm)}`} sub={labels.sarSqmUnit} />
+      <StatBadge label={labels.avgPsqm} value={`${fmt(stats.avgPricePerSqm)}`} sub={labels.sarSqmUnit} />
+      <StatBadge label={labels.p25} value={`${fmt(stats.p25PricePerSqm)}`} sub={labels.sarSqmUnit} />
+      <StatBadge label={labels.p75} value={`${fmt(stats.p75PricePerSqm)}`} sub={labels.sarSqmUnit} />
+      <StatBadge label={labels.medianArea} value={`${fmt(stats.medianArea)}`} sub={labels.sqmUnit} />
+      <StatBadge label={labels.txCountCol} value={fmt(stats.count)} />
     </div>
   );
 }
 
 export default function AnalyzePage() {
+  const { t, lang, dir } = useI18n();
+
   const [data, setData] = useState<AnalyzeResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // فلاتر
+  // Filters
   const [filterDealType, setFilterDealType] = useState("");
   const [filterPropertyType, setFilterPropertyType] = useState("");
   const [filterRegion, setFilterRegion] = useState("");
 
-  // واجهة
+  // UI
   const [activeTab, setActiveTab] = useState<"city" | "type" | "deal" | "region">("city");
   const [expandedCity, setExpandedCity] = useState<string | null>(null);
 
@@ -54,10 +58,10 @@ export default function AnalyzePage() {
       if (filterPropertyType) params.set("propertyType", filterPropertyType);
       if (filterRegion) params.set("region", filterRegion);
       const res = await fetch(`/api/analyze?${params}`);
-      if (!res.ok) throw new Error("فشل تحميل البيانات");
+      if (!res.ok) throw new Error("fetch failed");
       setData(await res.json());
     } catch {
-      setError("تعذّر تحميل بيانات التحليل");
+      setError(t("analyzeError"));
     } finally {
       setLoading(false);
     }
@@ -65,72 +69,96 @@ export default function AnalyzePage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // استخراج قوائم فريدة للفلاتر
+  // Extract unique filter lists
   const dealTypes = data ? Object.keys(data.byDealType).filter((k) => k !== "غير محدد") : [];
   const propertyTypes = data ? Object.keys(data.byPropertyType).filter((k) => k !== "غير محدد") : [];
   const regions = data ? Object.keys(data.byRegion).filter((k) => k !== "غير محدد") : [];
 
-  // ترتيب المدن حسب عدد الصفقات تنازلياً
+  // Sort cities by transaction count descending
   const sortedCities = data
     ? Object.entries(data.byCity).sort((a, b) => b[1].count - a[1].count)
     : [];
 
+  // Labels passed to StatsRow (avoids calling hooks inside non-component functions)
+  const statsLabels = {
+    medianPsqm: t("medianPsqm"),
+    avgPsqm: t("avgPsqm"),
+    p25: t("p25"),
+    p75: t("p75"),
+    medianArea: t("medianArea"),
+    txCountCol: t("txCountCol"),
+    sarSqmUnit: lang === "en" ? "SAR/m²" : "ر/م²",
+    sqmUnit: lang === "en" ? "m²" : "م²",
+  };
+
+  const sharedTableHeaders = (
+    <tr className="bg-gray-50 border-b border-gray-100">
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Property Type" : "نوع العقار"}</th>
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Transactions" : "صفقات"}</th>
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Median/m²" : "وسيط المتر"}</th>
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Avg/m²" : "متوسط المتر"}</th>
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{t("p25p75Range")}</th>
+      <th className="px-4 py-3 text-right font-medium text-gray-600">{t("medianAreaCol")}</th>
+    </tr>
+  );
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4" dir={dir}>
       <div className="max-w-5xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">تحليل أسعار العقارات</h1>
+            <h1 className="text-2xl font-bold text-gray-800">{t("analyzeTitle")}</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {data ? `${fmt(data.totalTransactions)} صفقة مُحللة` : "جاري التحميل..."}
+              {data ? `${fmt(data.totalTransactions)} ${t("analyzedTx")}` : t("loadingMsg")}
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <LanguageToggle />
             <Link href="/data" className="text-sm text-gray-500 hover:text-blue-600 border border-gray-200 px-3 py-1.5 rounded-lg transition-colors">
-              إدارة البيانات
+              {t("navData")}
             </Link>
             <Link href="/" className="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 px-3 py-1.5 rounded-lg transition-colors">
-              ← الرئيسية
+              {t("navHome")}
             </Link>
           </div>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
-          <p className="text-xs font-medium text-gray-600 mb-3">فلترة النتائج</p>
+          <p className="text-xs font-medium text-gray-600 mb-3">{t("filterTitle")}</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">نوع الصفقة</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("filterDealType")}</label>
               <select
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 value={filterDealType}
                 onChange={(e) => setFilterDealType(e.target.value)}
               >
-                <option value="">الكل</option>
+                <option value="">{t("allFilter")}</option>
                 {dealTypes.map((d) => <option key={d}>{d}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">نوع العقار</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("filterPropType")}</label>
               <select
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 value={filterPropertyType}
                 onChange={(e) => setFilterPropertyType(e.target.value)}
               >
-                <option value="">الكل</option>
+                <option value="">{t("allFilter")}</option>
                 {propertyTypes.map((p) => <option key={p}>{p}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">المنطقة الإدارية</label>
+              <label className="block text-xs text-gray-500 mb-1">{t("filterRegion")}</label>
               <select
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                 value={filterRegion}
                 onChange={(e) => setFilterRegion(e.target.value)}
               >
-                <option value="">الكل</option>
+                <option value="">{t("allFilter")}</option>
                 {regions.map((r) => <option key={r}>{r}</option>)}
               </select>
             </div>
@@ -139,13 +167,13 @@ export default function AnalyzePage() {
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-2xl text-center text-sm">
-            {error}
+            {t("analyzeError")}
           </div>
         )}
 
         {loading && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center text-gray-400 text-sm">
-            جاري تحليل البيانات...
+            {t("analyzeLoading")}
           </div>
         )}
 
@@ -155,10 +183,10 @@ export default function AnalyzePage() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="flex border-b border-gray-100">
                 {([
-                  { key: "city", label: "حسب المدينة والحي" },
-                  { key: "type", label: "حسب نوع العقار" },
-                  { key: "deal", label: "بيع vs إيجار" },
-                  { key: "region", label: "حسب المنطقة" },
+                  { key: "city", label: t("tabByCity") },
+                  { key: "type", label: t("tabByType") },
+                  { key: "deal", label: t("tabByDeal") },
+                  { key: "region", label: t("tabByRegion") },
                 ] as const).map((tab) => (
                   <button
                     key={tab.key}
@@ -176,10 +204,10 @@ export default function AnalyzePage() {
 
               <div className="p-4 space-y-4">
 
-                {/* ── حسب المدينة والحي ── */}
+                {/* By City & District */}
                 {activeTab === "city" && (
                   sortedCities.length === 0 ? (
-                    <p className="text-center text-gray-400 py-8 text-sm">لا توجد بيانات</p>
+                    <p className="text-center text-gray-400 py-8 text-sm">{t("noData")}</p>
                   ) : (
                     sortedCities.map(([city, stats]) => (
                       <div key={city} className="border border-gray-100 rounded-xl overflow-hidden">
@@ -190,10 +218,10 @@ export default function AnalyzePage() {
                           <div className="flex items-center gap-3">
                             <span className="font-semibold text-gray-800">{city}</span>
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                              {fmt(stats.count)} صفقة
+                              {fmt(stats.count)} {t("txCount2")}
                             </span>
                             <span className="text-xs text-gray-500">
-                              وسيط: {fmt(stats.medianPricePerSqm)} ر/م²
+                              {lang === "en" ? "Median:" : "وسيط:"} {fmt(stats.medianPricePerSqm)} {lang === "en" ? "SAR/m²" : "ر/م²"}
                             </span>
                           </div>
                           <span className="text-gray-400 text-sm">{expandedCity === city ? "▲" : "▼"}</span>
@@ -201,21 +229,23 @@ export default function AnalyzePage() {
 
                         {expandedCity === city && (
                           <div className="px-4 pb-4">
-                            <StatsRow stats={stats} />
+                            <StatsRow stats={stats} labels={statsLabels} />
 
-                            {/* الأحياء */}
+                            {/* Districts */}
                             <div className="mt-4">
-                              <p className="text-xs font-medium text-gray-600 mb-2">تفاصيل الأحياء</p>
+                              <p className="text-xs font-medium text-gray-600 mb-2">
+                                {lang === "en" ? "District Details" : "تفاصيل الأحياء"}
+                              </p>
                               <div className="overflow-x-auto rounded-xl border border-gray-100">
                                 <table className="w-full text-xs">
                                   <thead>
                                     <tr className="bg-gray-50 border-b border-gray-100">
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">الحي</th>
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">صفقات</th>
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">وسيط المتر</th>
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">متوسط المتر</th>
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">P25 ↔ P75</th>
-                                      <th className="px-3 py-2 text-right font-medium text-gray-600">وسيط المساحة</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{t("districtCol2")}</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{lang === "en" ? "Transactions" : "صفقات"}</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{lang === "en" ? "Median/m²" : "وسيط المتر"}</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{lang === "en" ? "Avg/m²" : "متوسط المتر"}</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{t("p25p75Range")}</th>
+                                      <th className="px-3 py-2 text-right font-medium text-gray-600">{t("medianAreaCol")}</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-50">
@@ -230,7 +260,7 @@ export default function AnalyzePage() {
                                           <td className="px-3 py-2 text-gray-500">
                                             {fmt(ds.p25PricePerSqm)} — {fmt(ds.p75PricePerSqm)}
                                           </td>
-                                          <td className="px-3 py-2 text-gray-500">{fmt(ds.medianArea)} م²</td>
+                                          <td className="px-3 py-2 text-gray-500">{fmt(ds.medianArea)} {lang === "en" ? "m²" : "م²"}</td>
                                         </tr>
                                       ))}
                                   </tbody>
@@ -244,22 +274,15 @@ export default function AnalyzePage() {
                   )
                 )}
 
-                {/* ── حسب نوع العقار ── */}
+                {/* By Property Type */}
                 {activeTab === "type" && (
                   Object.entries(data.byPropertyType).length === 0 ? (
-                    <p className="text-center text-gray-400 py-8 text-sm">لا توجد بيانات</p>
+                    <p className="text-center text-gray-400 py-8 text-sm">{t("noData")}</p>
                   ) : (
                     <div className="overflow-x-auto rounded-xl border border-gray-100">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="bg-gray-50 border-b border-gray-100">
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">نوع العقار</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">صفقات</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">وسيط المتر</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">متوسط المتر</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">P25 ↔ P75</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">وسيط المساحة</th>
-                          </tr>
+                          {sharedTableHeaders}
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                           {Object.entries(data.byPropertyType)
@@ -270,12 +293,12 @@ export default function AnalyzePage() {
                                   <span className="bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">{type}</span>
                                 </td>
                                 <td className="px-4 py-3 text-gray-600">{fmt(stats.count)}</td>
-                                <td className="px-4 py-3 text-green-700 font-semibold">{fmt(stats.medianPricePerSqm)} ر/م²</td>
-                                <td className="px-4 py-3 text-blue-700">{fmt(stats.avgPricePerSqm)} ر/م²</td>
+                                <td className="px-4 py-3 text-green-700 font-semibold">{fmt(stats.medianPricePerSqm)} {lang === "en" ? "SAR/m²" : "ر/م²"}</td>
+                                <td className="px-4 py-3 text-blue-700">{fmt(stats.avgPricePerSqm)} {lang === "en" ? "SAR/m²" : "ر/م²"}</td>
                                 <td className="px-4 py-3 text-gray-500 text-xs">
                                   {fmt(stats.p25PricePerSqm)} — {fmt(stats.p75PricePerSqm)}
                                 </td>
-                                <td className="px-4 py-3 text-gray-500">{fmt(stats.medianArea)} م²</td>
+                                <td className="px-4 py-3 text-gray-500">{fmt(stats.medianArea)} {lang === "en" ? "m²" : "م²"}</td>
                               </tr>
                             ))}
                         </tbody>
@@ -284,10 +307,10 @@ export default function AnalyzePage() {
                   )
                 )}
 
-                {/* ── بيع vs إيجار ── */}
+                {/* Sale vs Rent */}
                 {activeTab === "deal" && (
                   Object.entries(data.byDealType).length === 0 ? (
-                    <p className="text-center text-gray-400 py-8 text-sm">لا توجد بيانات</p>
+                    <p className="text-center text-gray-400 py-8 text-sm">{t("noData")}</p>
                   ) : (
                     <div className="space-y-4">
                       {Object.entries(data.byDealType)
@@ -300,30 +323,30 @@ export default function AnalyzePage() {
                                 dealType === "إيجار" ? "bg-orange-100 text-orange-700" :
                                 "bg-gray-100 text-gray-700"
                               }`}>{dealType}</span>
-                              <span className="text-xs text-gray-500">{fmt(stats.count)} صفقة</span>
+                              <span className="text-xs text-gray-500">{fmt(stats.count)} {t("txCount2")}</span>
                             </div>
-                            <StatsRow stats={stats} />
+                            <StatsRow stats={stats} labels={statsLabels} />
                           </div>
                         ))}
                     </div>
                   )
                 )}
 
-                {/* ── حسب المنطقة ── */}
+                {/* By Region */}
                 {activeTab === "region" && (
                   Object.entries(data.byRegion).length === 0 ? (
-                    <p className="text-center text-gray-400 py-8 text-sm">لا توجد بيانات</p>
+                    <p className="text-center text-gray-400 py-8 text-sm">{t("noData")}</p>
                   ) : (
                     <div className="overflow-x-auto rounded-xl border border-gray-100">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-gray-50 border-b border-gray-100">
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">المنطقة</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">صفقات</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">وسيط المتر</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">متوسط المتر</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">P25 ↔ P75</th>
-                            <th className="px-4 py-3 text-right font-medium text-gray-600">وسيط المساحة</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Region" : "المنطقة"}</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Transactions" : "صفقات"}</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Median/m²" : "وسيط المتر"}</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{lang === "en" ? "Avg/m²" : "متوسط المتر"}</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{t("p25p75Range")}</th>
+                            <th className="px-4 py-3 text-right font-medium text-gray-600">{t("medianAreaCol")}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -333,12 +356,12 @@ export default function AnalyzePage() {
                               <tr key={region} className="hover:bg-gray-50">
                                 <td className="px-4 py-3 font-medium text-gray-800">{region}</td>
                                 <td className="px-4 py-3 text-gray-600">{fmt(stats.count)}</td>
-                                <td className="px-4 py-3 text-green-700 font-semibold">{fmt(stats.medianPricePerSqm)} ر/م²</td>
-                                <td className="px-4 py-3 text-blue-700">{fmt(stats.avgPricePerSqm)} ر/م²</td>
+                                <td className="px-4 py-3 text-green-700 font-semibold">{fmt(stats.medianPricePerSqm)} {lang === "en" ? "SAR/m²" : "ر/م²"}</td>
+                                <td className="px-4 py-3 text-blue-700">{fmt(stats.avgPricePerSqm)} {lang === "en" ? "SAR/m²" : "ر/م²"}</td>
                                 <td className="px-4 py-3 text-gray-500 text-xs">
                                   {fmt(stats.p25PricePerSqm)} — {fmt(stats.p75PricePerSqm)}
                                 </td>
-                                <td className="px-4 py-3 text-gray-500">{fmt(stats.medianArea)} م²</td>
+                                <td className="px-4 py-3 text-gray-500">{fmt(stats.medianArea)} {lang === "en" ? "m²" : "م²"}</td>
                               </tr>
                             ))}
                         </tbody>
@@ -353,7 +376,7 @@ export default function AnalyzePage() {
         )}
 
         <footer className="text-center text-xs text-gray-400 py-4">
-          <p>التحليل مبني على بياناتك الفعلية — الوسيط أدق من المتوسط لأنه يتجاهل الأسعار الشاذة</p>
+          <p>{t("medianNote")}</p>
         </footer>
       </div>
     </div>

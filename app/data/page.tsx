@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import type { Transaction } from "@/lib/priceSimulator";
+import { useI18n } from "@/lib/i18n";
+import LanguageToggle from "@/components/LanguageToggle";
 
 type Tab = "manual" | "csv" | "file";
 
@@ -16,11 +18,13 @@ const CSV_EXAMPLE = `المدينة,الحي,النوع,المساحة,السع�
 const CSV_EXAMPLE_WITH_COORDS = `المدينة,الحي,النوع,المساحة,السعر,خط العرض,خط الطول
 الرياض,النرجس,شقة,150,750000,24.7967,46.6654`;
 
-function formatNum(n: number) {
-  return n.toLocaleString("ar-SA");
-}
-
 export default function DataPage() {
+  const { t, lang, dir } = useI18n();
+
+  function formatNum(n: number) {
+    return lang === "en" ? n.toLocaleString("en-US") : n.toLocaleString("ar-SA");
+  }
+
   const [tab, setTab] = useState<Tab>("manual");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +67,7 @@ export default function DataPage() {
   async function handleManualSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.city || !form.district || !form.area || !form.price) {
-      showMessage("error", "يرجى ملء جميع الحقول المطلوبة");
+      showMessage("error", t("fillRequired"));
       return;
     }
     setSaving(true);
@@ -80,12 +84,12 @@ export default function DataPage() {
         }),
       });
       if (res.ok) {
-        showMessage("success", "تمت إضافة الصفقة بنجاح");
+        showMessage("success", lang === "en" ? "Transaction added successfully" : "تمت إضافة الصفقة بنجاح");
         setForm({ city: "", district: "", propertyType: "شقة", area: "", price: "", lat: "", lng: "", date: "", source: "" });
         await loadTransactions();
       } else {
         const d = await res.json();
-        showMessage("error", d.error ?? "حدث خطأ");
+        showMessage("error", d.error ?? (lang === "en" ? "An error occurred" : "حدث خطأ"));
       }
     } finally {
       setSaving(false);
@@ -93,7 +97,10 @@ export default function DataPage() {
   }
 
   async function handleCSVImport() {
-    if (!csvText.trim()) { showMessage("error", "أدخل البيانات أولاً"); return; }
+    if (!csvText.trim()) {
+      showMessage("error", lang === "en" ? "Please enter data first" : "أدخل البيانات أولاً");
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/transactions", {
@@ -103,11 +110,13 @@ export default function DataPage() {
       });
       const d = await res.json();
       if (res.ok) {
-        showMessage("success", `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
+        showMessage("success", lang === "en"
+          ? `Added ${d.added} transactions successfully (total: ${d.total})`
+          : `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
         setCsvText("");
         await loadTransactions();
       } else {
-        showMessage("error", d.error ?? "حدث خطأ في تحليل البيانات");
+        showMessage("error", d.error ?? (lang === "en" ? "Error parsing data" : "حدث خطأ في تحليل البيانات"));
       }
     } finally {
       setSaving(false);
@@ -121,7 +130,9 @@ export default function DataPage() {
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (!["xlsx", "xls", "csv", "txt"].includes(ext ?? "")) {
       setFileStatus("error");
-      showMessage("error", "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
+      showMessage("error", lang === "en"
+        ? "Unsupported file format. Accepted: .xlsx, .xls, .csv"
+        : "صيغة الملف غير مدعومة. الصيغ المقبولة: .xlsx, .xls, .csv");
       return;
     }
 
@@ -135,16 +146,18 @@ export default function DataPage() {
     if (!selectedFile) return;
     setSaving(true);
     try {
-      const form = new FormData();
-      form.append("file", selectedFile);
+      const formData = new FormData();
+      formData.append("file", selectedFile);
 
       const res = await fetch("/api/transactions/upload", {
         method: "POST",
-        body: form,
+        body: formData,
       });
       const d = await res.json();
       if (res.ok) {
-        showMessage("success", `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
+        showMessage("success", lang === "en"
+          ? `Added ${d.added} transactions successfully (total: ${d.total})`
+          : `تمت إضافة ${d.added} صفقة بنجاح (الإجمالي: ${d.total})`);
         setSelectedFile(null);
         setFilePreviewRows(d.preview ?? []);
         setFileName("");
@@ -152,7 +165,7 @@ export default function DataPage() {
         if (fileInputRef.current) fileInputRef.current.value = "";
         await loadTransactions();
       } else {
-        showMessage("error", d.error ?? "حدث خطأ في معالجة الملف");
+        showMessage("error", d.error ?? (lang === "en" ? "Error processing file" : "حدث خطأ في معالجة الملف"));
       }
     } finally {
       setSaving(false);
@@ -160,41 +173,44 @@ export default function DataPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("هل أنت متأكد من حذف هذه الصفقة؟")) return;
+    if (!confirm(t("confirmDeleteOne"))) return;
     const res = await fetch(`/api/transactions?id=${id}`, { method: "DELETE" });
     if (res.ok) {
-      setTransactions((prev) => prev.filter((t) => t.id !== id));
-      showMessage("success", "تم حذف الصفقة");
+      setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+      showMessage("success", lang === "en" ? "Transaction deleted" : "تم حذف الصفقة");
     }
   }
 
   async function handleDeleteAll() {
-    if (!confirm(`هل أنت متأكد من حذف جميع الصفقات (${transactions.length})؟ لا يمكن التراجع.`)) return;
+    if (!confirm(`${t("confirmDeleteAll")} (${transactions.length})? ${lang === "en" ? "This cannot be undone." : "لا يمكن التراجع."}`)) return;
     const res = await fetch("/api/transactions?all=true", { method: "DELETE" });
     if (res.ok) {
       setTransactions([]);
-      showMessage("success", "تم حذف جميع الصفقات");
+      showMessage("success", lang === "en" ? "All transactions deleted" : "تم حذف جميع الصفقات");
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-8 px-4" dir={dir}>
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">بيانات الصفقات العقارية</h1>
+            <h1 className="text-2xl font-bold text-gray-800">{t("dataTitle")}</h1>
             <p className="text-sm text-gray-500 mt-1">
-              أضف صفقات حقيقية لتحسين دقة تقديرات الأسعار
+              {t("dataSubtitle")}
             </p>
           </div>
-          <Link
-            href="/"
-            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-          >
-            ← العودة للرئيسية
-          </Link>
+          <div className="flex items-center gap-3">
+            <LanguageToggle />
+            <Link
+              href="/"
+              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              {t("navHome")}
+            </Link>
+          </div>
         </div>
 
         {/* Message */}
@@ -214,17 +230,17 @@ export default function DataPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-gray-100">
-            {(["manual", "csv", "file"] as Tab[]).map((t) => (
+            {(["manual", "csv", "file"] as Tab[]).map((tabKey) => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabKey}
+                onClick={() => setTab(tabKey)}
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  tab === t
+                  tab === tabKey
                     ? "bg-blue-50 text-blue-700 border-b-2 border-blue-500"
                     : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                {t === "manual" ? "إضافة يدوية" : t === "csv" ? "لصق CSV / Excel" : "رفع ملف"}
+                {tabKey === "manual" ? t("tabManual") : tabKey === "csv" ? t("tabCSV") : t("tabFile")}
               </button>
             ))}
           </div>
@@ -234,25 +250,25 @@ export default function DataPage() {
               <form onSubmit={handleManualSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">المدينة *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("cityRequired")}</label>
                     <input
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      placeholder="مثال: الرياض"
+                      placeholder={lang === "en" ? "e.g. Riyadh" : "مثال: الرياض"}
                       value={form.city}
                       onChange={(e) => setForm({ ...form, city: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">الحي *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("districtRequired")}</label>
                     <input
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      placeholder="مثال: النرجس"
+                      placeholder={lang === "en" ? "e.g. Al-Nargis" : "مثال: النرجس"}
                       value={form.district}
                       onChange={(e) => setForm({ ...form, district: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">نوع العقار</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("propTypeLabel")}</label>
                     <select
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
                       value={form.propertyType}
@@ -262,7 +278,7 @@ export default function DataPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">المساحة (م²) *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("areaRequired")}</label>
                     <input
                       type="number" min="1"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -272,7 +288,7 @@ export default function DataPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">السعر الإجمالي (ريال) *</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("priceRequired")}</label>
                     <input
                       type="number" min="1"
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -282,10 +298,10 @@ export default function DataPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">المصدر</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{t("sourceOptional")}</label>
                     <input
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                      placeholder="مثال: عقار، مستقل..."
+                      placeholder={t("sourcePlaceholder")}
                       value={form.source}
                       onChange={(e) => setForm({ ...form, source: e.target.value })}
                     />
@@ -295,11 +311,11 @@ export default function DataPage() {
                 {/* Optional coordinates */}
                 <details className="group">
                   <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">
-                    + إحداثيات الموقع (اختياري — تحسّن دقة التقدير)
+                    {t("coordsOptional")}
                   </summary>
                   <div className="grid grid-cols-2 gap-4 mt-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">خط العرض (Latitude)</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{t("latLabel")}</label>
                       <input
                         type="number" step="any"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -309,7 +325,7 @@ export default function DataPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">خط الطول (Longitude)</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{t("lngLabel")}</label>
                       <input
                         type="number" step="any"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -319,7 +335,7 @@ export default function DataPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">التاريخ (اختياري)</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{t("dateLabel")}</label>
                       <input
                         type="month"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -335,26 +351,25 @@ export default function DataPage() {
                   disabled={saving}
                   className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {saving ? "جاري الحفظ..." : "إضافة الصفقة"}
+                  {saving ? t("savingBtn") : t("addTxBtn")}
                 </button>
               </form>
             ) : tab === "csv" ? (
               <div className="space-y-4">
                 {/* Format hint */}
                 <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-2">
-                  <p className="font-medium text-gray-700">تنسيق البيانات المقبول:</p>
-                  <p>يمكنك لصق البيانات مباشرة من Excel أو بصيغة CSV.</p>
-                  <p className="font-medium mt-2">بدون إحداثيات:</p>
+                  <p className="font-medium text-gray-700">{t("csvFormatTitle")}</p>
+                  <p>{lang === "en" ? "You can paste data directly from Excel or in CSV format." : "يمكنك لصق البيانات مباشرة من Excel أو بصيغة CSV."}</p>
+                  <p className="font-medium mt-2">{t("csvNoCoords")}</p>
                   <pre className="bg-white border border-gray-200 rounded-lg p-2 overflow-x-auto text-xs font-mono whitespace-pre-wrap">{CSV_EXAMPLE}</pre>
-                  <p className="font-medium mt-2">مع إحداثيات (أدق):</p>
+                  <p className="font-medium mt-2">{t("csvWithCoords")}</p>
                   <pre className="bg-white border border-gray-200 rounded-lg p-2 overflow-x-auto text-xs font-mono whitespace-pre-wrap">{CSV_EXAMPLE_WITH_COORDS}</pre>
-                  <p className="text-gray-500">• الفاصل يمكن أن يكون فاصلة أو Tab (من Excel)</p>
-                  <p className="text-gray-500">• سطر العنوان اختياري</p>
+                  <p className="text-gray-500">{t("csvSepHint")}</p>
                 </div>
 
                 <textarea
                   className="w-full h-52 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
-                  placeholder="الصق بياناتك هنا..."
+                  placeholder={t("csvPastePlaceholder")}
                   value={csvText}
                   onChange={(e) => setCsvText(e.target.value)}
                   dir="ltr"
@@ -365,17 +380,17 @@ export default function DataPage() {
                   disabled={saving || !csvText.trim()}
                   className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {saving ? "جاري الاستيراد..." : "استيراد البيانات"}
+                  {saving ? t("importingBtn") : t("importBtn")}
                 </button>
               </div>
             ) : (
-              /* ─── تبويب رفع ملف ─── */
+              /* File upload tab */
               <div className="space-y-4">
                 {/* Format guide */}
                 <div className="bg-gray-50 rounded-xl p-4 text-xs text-gray-600 space-y-1">
-                  <p className="font-medium text-gray-700">الصيغ المقبولة: Excel (.xlsx / .xls) أو CSV (.csv)</p>
-                  <p>يجب أن يحتوي الملف على أعمدة: المدينة، الحي، النوع، المساحة، السعر</p>
-                  <p className="text-gray-500">الأعمدة الاختيارية: خط العرض، خط الطول، التاريخ، المصدر</p>
+                  <p className="font-medium text-gray-700">{t("fileFormats")}</p>
+                  <p>{t("fileColsHint")}</p>
+                  <p className="text-gray-500">{t("fileOptCols")}</p>
                 </div>
 
                 {/* Drop zone / file input */}
@@ -398,7 +413,7 @@ export default function DataPage() {
                   {fileStatus === "idle" && (
                     <>
                       <span className="text-3xl">📂</span>
-                      <p className="text-sm text-gray-600">انقر لاختيار ملف أو اسحب وأفلت هنا</p>
+                      <p className="text-sm text-gray-600">{t("fileIdle")}</p>
                       <p className="text-xs text-gray-400">.xlsx — .xls — .csv</p>
                     </>
                   )}
@@ -406,13 +421,13 @@ export default function DataPage() {
                     <>
                       <span className="text-3xl">📄</span>
                       <p className="text-sm text-green-700 font-medium">{fileName}</p>
-                      <p className="text-xs text-green-600">الملف جاهز — اضغط &quot;استيراد الملف&quot; للمتابعة</p>
+                      <p className="text-xs text-green-600">{t("fileReady")}</p>
                     </>
                   )}
                   {fileStatus === "error" && (
                     <>
                       <span className="text-3xl">❌</span>
-                      <p className="text-sm text-red-600">تعذّرت القراءة — انقر لاختيار ملف آخر</p>
+                      <p className="text-sm text-red-600">{t("fileError")}</p>
                     </>
                   )}
                 </label>
@@ -420,7 +435,7 @@ export default function DataPage() {
                 {/* Preview table — shown after successful import */}
                 {filePreviewRows.length > 0 && (
                   <div className="overflow-x-auto rounded-xl border border-green-100 bg-green-50">
-                    <p className="text-xs text-green-700 font-medium px-3 pt-2 pb-1">معاينة الصفوف المستوردة</p>
+                    <p className="text-xs text-green-700 font-medium px-3 pt-2 pb-1">{t("previewTitle")}</p>
                     <table className="w-full text-xs" dir="ltr">
                       <tbody>
                         {filePreviewRows.map((row, ri) => (
@@ -442,7 +457,7 @@ export default function DataPage() {
                   disabled={saving || !selectedFile}
                   className="w-full bg-blue-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
                 >
-                  {saving ? "جاري الاستيراد..." : "استيراد الملف"}
+                  {saving ? t("importingBtn") : t("importFileBtn")}
                 </button>
               </div>
             )}
@@ -453,10 +468,10 @@ export default function DataPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">
-              الصفقات المحفوظة
+              {t("savedTxTitle")}
               {!loading && (
                 <span className="mr-2 text-sm font-normal text-gray-400">
-                  ({transactions.length} صفقة)
+                  ({transactions.length} {t("txUnit")})
                 </span>
               )}
             </h2>
@@ -465,31 +480,31 @@ export default function DataPage() {
                 onClick={handleDeleteAll}
                 className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-3 py-1.5 rounded-lg transition-colors"
               >
-                حذف الكل
+                {t("deleteAll")}
               </button>
             )}
           </div>
 
           {loading ? (
-            <div className="p-8 text-center text-gray-400 text-sm">جاري التحميل...</div>
+            <div className="p-8 text-center text-gray-400 text-sm">{t("loadingMsg")}</div>
           ) : transactions.length === 0 ? (
             <div className="p-12 text-center text-gray-400">
               <p className="text-4xl mb-3">📋</p>
-              <p className="text-sm">لا توجد صفقات محفوظة بعد</p>
-              <p className="text-xs mt-1">أضف صفقات لتحسين دقة التسعير</p>
+              <p className="text-sm">{t("noTxMsg")}</p>
+              <p className="text-xs mt-1">{t("noTxHint")}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">المدينة</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">الحي</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">النوع</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">المساحة</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">السعر الإجمالي</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">سعر المتر</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">المصدر</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("cityLabel")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("districtCol")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("typeCol")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("areaCol")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("totalPrice")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("priceSqmCol")}</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t("sourceCol")}</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
@@ -503,8 +518,8 @@ export default function DataPage() {
                           {tx.propertyType}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{formatNum(tx.area)} م²</td>
-                      <td className="px-4 py-3 text-gray-800 font-medium">{formatNum(tx.price)} ر</td>
+                      <td className="px-4 py-3 text-gray-600">{formatNum(tx.area)} {t("sqmAbbr")}</td>
+                      <td className="px-4 py-3 text-gray-800 font-medium">{formatNum(tx.price)} {t("sarAbbr")}</td>
                       <td className="px-4 py-3 text-green-700 font-semibold">{formatNum(tx.pricePerSqm)}</td>
                       <td className="px-4 py-3 text-gray-400 text-xs">{tx.source ?? "—"}</td>
                       <td className="px-4 py-3">
@@ -512,7 +527,7 @@ export default function DataPage() {
                           onClick={() => handleDelete(tx.id)}
                           className="text-red-400 hover:text-red-600 text-xs transition-colors"
                         >
-                          حذف
+                          {t("deleteOne")}
                         </button>
                       </td>
                     </tr>

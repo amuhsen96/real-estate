@@ -37,6 +37,10 @@ export function parseInput(input: string): ParseResult {
   const directCoords = parseDirectCoordinates(trimmed);
   if (directCoords) return { success: true, coordinates: directCoords };
 
+  // Try parsing as OpenStreetMap URL
+  const osmCoords = parseOsmUrl(trimmed);
+  if (osmCoords) return { success: true, coordinates: osmCoords };
+
   // Try parsing as Google Maps URL
   const urlCoords = parseGoogleMapsUrl(trimmed);
   if (urlCoords) {
@@ -70,6 +74,34 @@ function parseDirectCoordinates(input: string): Coordinates | null {
       return { lat, lng };
     }
   }
+  return null;
+}
+
+function parseOsmUrl(input: string): Coordinates | null {
+  // Pattern: https://www.openstreetmap.org/#map=Z/LAT/LNG
+  const hashMatch = input.match(/#map=\d+\/([-\d.]+)\/([-\d.]+)/);
+  if (hashMatch) {
+    const lat = parseFloat(hashMatch[1]);
+    const lng = parseFloat(hashMatch[2]);
+    if (isValidCoordinate(lat, lng)) return { lat, lng };
+  }
+
+  // Pattern: https://www.openstreetmap.org/?mlat=LAT&mlon=LNG
+  try {
+    const url = new URL(input);
+    if (url.hostname.includes("openstreetmap.org")) {
+      const mlat = url.searchParams.get("mlat");
+      const mlon = url.searchParams.get("mlon");
+      if (mlat && mlon) {
+        const lat = parseFloat(mlat);
+        const lng = parseFloat(mlon);
+        if (isValidCoordinate(lat, lng)) return { lat, lng };
+      }
+    }
+  } catch {
+    // not a valid URL
+  }
+
   return null;
 }
 
