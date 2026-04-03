@@ -86,7 +86,7 @@ export default function Home() {
         {coordinates && (
           <div className="space-y-6">
             <SatelliteView coordinates={coordinates} />
-            <NearbyPlaces coordinates={coordinates} categories={nearbyData} isLoading={nearbyLoading} />
+            <NearbyPlaces categories={nearbyData} isLoading={nearbyLoading} />
             <TransportInfo estimate={priceEstimate} />
             <PriceEstimate estimate={priceEstimate} isLoading={isLoading} detectedDistrict={detectedDistrict} />
             {priceEstimate && !isLoading && reportData && (
