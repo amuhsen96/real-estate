@@ -10,6 +10,12 @@ export interface ReportData {
   propertyType?: string;
   area?: number;
   generatedAt?: string;
+  nearbyCategories?: {
+    category: string;
+    categoryAr: string;
+    icon: string;
+    places: { name: string; distance: number | null }[];
+  }[];
 }
 
 interface Props {
@@ -57,6 +63,9 @@ const LABEL = {
       "التقديرات مبنية على بيانات السوق المتاحة وخوارزمية KNN. للتقييم الدقيق يُوصى بمراجعة مقيّم عقاري معتمد.",
     noMetro: "لا تتوفر بيانات محطة مترو",
     noStadium: "لا تتوفر بيانات استاد",
+    nearbyTitle: "الخدمات والمرافق القريبة (نطاق 5 كم)",
+    nearbyNone: "لا توجد بيانات",
+    nearbyCatCount: "العدد",
   },
   en: {
     title: "Property Location Analysis Report",
@@ -94,12 +103,15 @@ const LABEL = {
       "Estimates are based on available market data and KNN algorithm. For accurate valuation, consult a certified appraiser.",
     noMetro: "No metro station data available",
     noStadium: "No stadium data available",
+    nearbyTitle: "Nearby Services & Facilities (5 km radius)",
+    nearbyNone: "No data",
+    nearbyCatCount: "Count",
   },
 } as const;
 
 export default function PropertyReport({ data, lang, reportRef }: Props) {
   const L = LABEL[lang];
-  const { coords, estimate, district, propertyType, area, generatedAt } = data;
+  const { coords, estimate, district, propertyType, area, generatedAt, nearbyCategories } = data;
   const dir = lang === "ar" ? "rtl" : "ltr";
   const isReal = estimate.dataSource === "real";
 
@@ -317,6 +329,46 @@ export default function PropertyReport({ data, lang, reportRef }: Props) {
         </div>
       </div>
 
+      {/* ── الخدمات القريبة ── */}
+      {nearbyCategories && nearbyCategories.some(c => c.places.length > 0) && (
+        <div style={{ marginBottom: "24px" }}>
+          <h2 style={{ fontSize: "14px", fontWeight: "bold", color: "#1e293b", marginBottom: "12px", borderBottom: "1px solid #e2e8f0", paddingBottom: "6px" }}>
+            {L.nearbyTitle}
+          </h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            {nearbyCategories.filter(c => c.places.length > 0).map(cat => {
+              const nearest = cat.places[0];
+              const dist = nearest?.distance != null
+                ? nearest.distance < 1000
+                  ? `${nearest.distance} ${lang === "ar" ? "م" : "m"}`
+                  : `${(nearest.distance / 1000).toFixed(1)} ${lang === "ar" ? "كم" : "km"}`
+                : "";
+              return (
+                <div key={cat.category} style={{
+                  background: "#f8fafc", borderRadius: "8px", padding: "10px 12px",
+                  border: "1px solid #e2e8f0", display: "flex", alignItems: "flex-start", gap: "10px",
+                }}>
+                  <span style={{ fontSize: "20px", lineHeight: 1, flexShrink: 0 }}>{cat.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "11px", fontWeight: "700", color: "#334155" }}>{cat.categoryAr}</span>
+                      <span style={{ fontSize: "10px", background: "#dbeafe", color: "#1e40af", borderRadius: "999px", padding: "1px 7px", fontWeight: "600" }}>
+                        {cat.places.length}
+                      </span>
+                    </div>
+                    {nearest && (
+                      <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nearest.name || L.nearbyNone}{dist ? ` · ${dist}` : ""}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── تذييل ── */}
       <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "12px", fontSize: "10px", color: "#94a3b8" }}>
         {L.disclaimer}
@@ -329,12 +381,12 @@ export default function PropertyReport({ data, lang, reportRef }: Props) {
 export function buildMapSrc(coords: Coordinates, estimate: PriceEstimate): string {
   const p = new URLSearchParams({ lat: String(coords.lat), lng: String(coords.lng) });
   if (estimate.nearestMetro) {
-    // استخراج الإحداثيات من رابط Google Maps المحفوظ في routeUrl
-    const match = estimate.nearestMetro.routeUrl.match(/\/(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
+    // OSM route URL format: …;FROM_LAT,FROM_LNG;TO_LAT,TO_LNG
+    const match = estimate.nearestMetro.routeUrl.match(/;(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
     if (match) { p.set("mlat", match[1]); p.set("mlng", match[2]); }
   }
   if (estimate.nearestStadium) {
-    const match = estimate.nearestStadium.routeUrl.match(/\/(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
+    const match = estimate.nearestStadium.routeUrl.match(/;(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
     if (match) { p.set("slat", match[1]); p.set("slng", match[2]); }
   }
   return `/api/map-image?${p}`;
