@@ -15,7 +15,7 @@ import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 import { useI18n } from "@/lib/i18n";
 
 export default function Home() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [priceEstimate, setPriceEstimate] = useState<PriceEstimateType | null>(null);
   const [detectedDistrict, setDetectedDistrict] = useState<string | null>(null);
@@ -92,8 +92,12 @@ export default function Home() {
             {priceEstimate && !isLoading && reportData && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <p className="text-sm font-semibold text-gray-700 mb-1">{t("exportTitle")}</p>
-                <p className="text-xs text-gray-400 mb-4">{t("exportSubtitle")}</p>
-                <ExportPDFButtons reportData={reportData} />
+                <p className="text-xs text-gray-400 mb-4">
+                  {nearbyLoading
+                    ? (lang === "en" ? "Loading nearby services…" : "جاري تحميل الأنشطة القريبة...")
+                    : t("exportSubtitle")}
+                </p>
+                <ExportPDFButtons reportData={reportData} disabled={nearbyLoading} />
               </div>
             )}
           </div>

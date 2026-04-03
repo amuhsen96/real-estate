@@ -16,67 +16,18 @@ interface CategoryResult {
   }[];
 }
 
+// تعريف كل فئة مع الـ tags المقابلة في OSM
 const CATEGORIES = [
-  {
-    id: "restaurant",
-    ar: "مطاعم وكافيهات",
-    icon: "🍽️",
-    query: `node["amenity"~"^(restaurant|cafe)$"](around:RADIUS,LAT,LNG);`,
-  },
-  {
-    id: "shopping_mall",
-    ar: "مراكز تجارية",
-    icon: "🛍️",
-    query: `(node["shop"="mall"](around:RADIUS,LAT,LNG);way["shop"="mall"](around:RADIUS,LAT,LNG);way["building"="retail"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "school",
-    ar: "مدارس وجامعات",
-    icon: "🎓",
-    query: `(node["amenity"~"^(school|university|college)$"](around:RADIUS,LAT,LNG);way["amenity"~"^(school|university|college)$"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "hospital",
-    ar: "مستشفيات وعيادات",
-    icon: "🏥",
-    query: `(node["amenity"~"^(hospital|clinic|doctors)$"](around:RADIUS,LAT,LNG);way["amenity"~"^(hospital|clinic|doctors)$"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "place_of_worship",
-    ar: "مساجد",
-    icon: "🕌",
-    query: `(node["amenity"="place_of_worship"]["religion"="muslim"](around:RADIUS,LAT,LNG);way["amenity"="place_of_worship"]["religion"="muslim"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "park",
-    ar: "حدائق ومتنزهات",
-    icon: "🌳",
-    query: `(node["leisure"="park"](around:RADIUS,LAT,LNG);way["leisure"="park"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "bank",
-    ar: "بنوك وصرافات",
-    icon: "🏦",
-    query: `node["amenity"~"^(bank|atm)$"](around:RADIUS,LAT,LNG);`,
-  },
-  {
-    id: "gas_station",
-    ar: "محطات وقود",
-    icon: "⛽",
-    query: `node["amenity"="fuel"](around:RADIUS,LAT,LNG);`,
-  },
-  {
-    id: "supermarket",
-    ar: "سوبرماركت",
-    icon: "🛒",
-    query: `(node["shop"="supermarket"](around:RADIUS,LAT,LNG);node["shop"="grocery"](around:RADIUS,LAT,LNG););`,
-  },
-  {
-    id: "pharmacy",
-    ar: "صيدليات",
-    icon: "💊",
-    query: `node["amenity"="pharmacy"](around:RADIUS,LAT,LNG);`,
-  },
+  { id: "restaurant",       ar: "مطاعم وكافيهات",      icon: "🍽️" },
+  { id: "shopping_mall",    ar: "مراكز تجارية",          icon: "🛍️" },
+  { id: "school",           ar: "مدارس وجامعات",         icon: "🎓" },
+  { id: "hospital",         ar: "مستشفيات وعيادات",      icon: "🏥" },
+  { id: "place_of_worship", ar: "مساجد",                 icon: "🕌" },
+  { id: "park",             ar: "حدائق ومتنزهات",        icon: "🌳" },
+  { id: "bank",             ar: "بنوك وصرافات",          icon: "🏦" },
+  { id: "gas_station",      ar: "محطات وقود",            icon: "⛽" },
+  { id: "supermarket",      ar: "سوبرماركت",             icon: "🛒" },
+  { id: "pharmacy",         ar: "صيدليات",               icon: "💊" },
 ];
 
 const MAX_RADIUS = 5000;
@@ -107,6 +58,54 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
+/** استعلام واحد يجلب كل الفئات دفعة واحدة */
+function buildUnifiedQuery(lat: number, lng: number, radius: number): string {
+  const R = radius;
+  const L = lat;
+  const G = lng;
+  return `[out:json][timeout:25];
+(
+  node["amenity"~"^(restaurant|cafe)$"](around:${R},${L},${G});
+  node["shop"="mall"](around:${R},${L},${G});
+  way["shop"="mall"](around:${R},${L},${G});
+  way["building"="retail"](around:${R},${L},${G});
+  node["amenity"~"^(school|university|college)$"](around:${R},${L},${G});
+  way["amenity"~"^(school|university|college)$"](around:${R},${L},${G});
+  node["amenity"~"^(hospital|clinic|doctors)$"](around:${R},${L},${G});
+  way["amenity"~"^(hospital|clinic|doctors)$"](around:${R},${L},${G});
+  node["amenity"="place_of_worship"]["religion"="muslim"](around:${R},${L},${G});
+  way["amenity"="place_of_worship"]["religion"="muslim"](around:${R},${L},${G});
+  node["leisure"="park"](around:${R},${L},${G});
+  way["leisure"="park"](around:${R},${L},${G});
+  node["amenity"~"^(bank|atm)$"](around:${R},${L},${G});
+  node["amenity"="fuel"](around:${R},${L},${G});
+  node["shop"~"^(supermarket|grocery)$"](around:${R},${L},${G});
+  node["amenity"="pharmacy"](around:${R},${L},${G});
+);
+out center 300;`;
+}
+
+/** تصنيف عنصر OSM إلى فئة */
+function classifyElement(tags: Record<string, string>): string | null {
+  const amenity = tags["amenity"] ?? "";
+  const shop    = tags["shop"]    ?? "";
+  const leisure = tags["leisure"] ?? "";
+  const building = tags["building"] ?? "";
+  const religion = tags["religion"] ?? "";
+
+  if (amenity === "restaurant" || amenity === "cafe") return "restaurant";
+  if (shop === "mall" || building === "retail")         return "shopping_mall";
+  if (amenity === "school" || amenity === "university" || amenity === "college") return "school";
+  if (amenity === "hospital" || amenity === "clinic" || amenity === "doctors")   return "hospital";
+  if (amenity === "place_of_worship" && religion === "muslim") return "place_of_worship";
+  if (leisure === "park")   return "park";
+  if (amenity === "bank" || amenity === "atm") return "bank";
+  if (amenity === "fuel")   return "gas_station";
+  if (shop === "supermarket" || shop === "grocery") return "supermarket";
+  if (amenity === "pharmacy") return "pharmacy";
+  return null;
+}
+
 async function fetchOverpass(query: string): Promise<{ elements: OverpassElement[] } | null> {
   for (const url of OVERPASS_URLS) {
     try {
@@ -114,58 +113,16 @@ async function fetchOverpass(query: string): Promise<{ elements: OverpassElement
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(28000),
       });
-
-      // Overpass returns HTML error pages when busy - skip to next mirror
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok || !contentType.includes("json")) continue;
-
       return await res.json();
     } catch {
       continue;
     }
   }
   return null;
-}
-
-async function searchCategory(
-  lat: number,
-  lng: number,
-  cat: (typeof CATEGORIES)[0]
-): Promise<CategoryResult> {
-  const rawQuery = cat.query
-    .replace(/RADIUS/g, String(MAX_RADIUS))
-    .replace(/LAT/g, String(lat))
-    .replace(/LNG/g, String(lng));
-
-  const overpassQuery = `[out:json][timeout:15];${rawQuery}out center 20;`;
-  const empty: CategoryResult = { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places: [] };
-
-  const data = await fetchOverpass(overpassQuery);
-  if (!data) return empty;
-
-  const places = (data.elements ?? [])
-    .map((el) => {
-      const elLat = el.lat ?? el.center?.lat;
-      const elLng = el.lon ?? el.center?.lon;
-      const name = el.tags?.["name:ar"] ?? el.tags?.["name"] ?? "";
-      const distance = elLat != null && elLng != null
-        ? calcDistance(lat, lng, elLat, elLng)
-        : null;
-      return {
-        name,
-        vicinity: el.tags?.["addr:street"] ?? "",
-        rating: null,
-        distance,
-        ...(elLat != null && elLng != null ? { lat: elLat, lng: elLng } : {}),
-      };
-    })
-    .filter((p) => p.name)
-    .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))
-    .slice(0, 20);
-
-  return { category: cat.id, categoryAr: cat.ar, icon: cat.icon, places };
 }
 
 export async function POST(request: NextRequest) {
@@ -177,18 +134,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lat و lng مطلوبان" }, { status: 400 });
     }
 
-    const results = await Promise.all(
-      CATEGORIES.map((cat) => searchCategory(lat, lng, cat))
+    // ── طلب واحد لكل الفئات ──────────────────────────────────────────────────
+    const query = buildUnifiedQuery(lat, lng, MAX_RADIUS);
+    const data  = await fetchOverpass(query);
+
+    // تجميع النتائج في خريطة categoryId → places[]
+    const buckets = new Map<string, CategoryResult["places"]>(
+      CATEGORIES.map((c) => [c.id, []])
     );
 
+    for (const el of data?.elements ?? []) {
+      if (!el.tags) continue;
+      const catId = classifyElement(el.tags);
+      if (!catId) continue;
+
+      const elLat = el.lat ?? el.center?.lat;
+      const elLng = el.lon  ?? el.center?.lon;
+      const name  = el.tags["name:ar"] ?? el.tags["name"] ?? "";
+      if (!name) continue;
+
+      const distance = elLat != null && elLng != null
+        ? calcDistance(lat, lng, elLat, elLng)
+        : null;
+
+      buckets.get(catId)?.push({
+        name,
+        vicinity: el.tags["addr:street"] ?? "",
+        rating: null,
+        distance,
+        ...(elLat != null && elLng != null ? { lat: elLat, lng: elLng } : {}),
+      });
+    }
+
+    // ترتيب كل فئة حسب المسافة
+    const results: CategoryResult[] = CATEGORIES.map((cat) => ({
+      category:   cat.id,
+      categoryAr: cat.ar,
+      icon:       cat.icon,
+      places: (buckets.get(cat.id) ?? [])
+        .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))
+        .slice(0, 20),
+    }));
+
     const summary = {
-      restaurants: results.find((r) => r.category === "restaurant")?.places.length ?? 0,
-      schools:     results.find((r) => r.category === "school")?.places.length ?? 0,
-      hospitals:   results.find((r) => r.category === "hospital")?.places.length ?? 0,
-      malls:       results.find((r) => r.category === "shopping_mall")?.places.length ?? 0,
+      restaurants: results.find((r) => r.category === "restaurant")?.places.length    ?? 0,
+      schools:     results.find((r) => r.category === "school")?.places.length         ?? 0,
+      hospitals:   results.find((r) => r.category === "hospital")?.places.length       ?? 0,
+      malls:       results.find((r) => r.category === "shopping_mall")?.places.length  ?? 0,
       mosques:     results.find((r) => r.category === "place_of_worship")?.places.length ?? 0,
-      parks:       results.find((r) => r.category === "park")?.places.length ?? 0,
-      banks:       results.find((r) => r.category === "bank")?.places.length ?? 0,
+      parks:       results.find((r) => r.category === "park")?.places.length           ?? 0,
+      banks:       results.find((r) => r.category === "bank")?.places.length           ?? 0,
     };
 
     return NextResponse.json({ categories: results, summary });
