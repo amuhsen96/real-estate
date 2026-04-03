@@ -59,8 +59,22 @@ export default function Home() {
     finally { setIsLoading(false); }
   };
 
+  // حساب النقاط النهائية لتضمينها في التقرير
+  const servicesScore = nearbyData.length > 0
+    ? nearbyData.filter(c => c.places.some((p: { distance: number | null }) => p.distance != null && p.distance <= 2000)).length >= 8 ? 4.0
+    : nearbyData.filter(c => c.places.some((p: { distance: number | null }) => p.distance != null && p.distance <= 2000)).length >= 6 ? 3.2
+    : nearbyData.filter(c => c.places.some((p: { distance: number | null }) => p.distance != null && p.distance <= 2000)).length >= 4 ? 2.5
+    : nearbyData.filter(c => c.places.some((p: { distance: number | null }) => p.distance != null && p.distance <= 2000)).length >= 2 ? 1.5
+    : nearbyData.filter(c => c.places.some((p: { distance: number | null }) => p.distance != null && p.distance <= 2000)).length >= 1 ? 0.8 : 0
+    : 0;
+
   const reportData: ReportData | null = coordinates && priceEstimate ? {
-    coords: coordinates, estimate: priceEstimate, district: detectedDistrict,
+    coords: coordinates,
+    estimate: {
+      ...priceEstimate,
+      locationScore: Math.round(Math.min(10, priceEstimate.locationScore + servicesScore) * 10) / 10,
+    },
+    district: detectedDistrict,
     propertyType: searchParams?.propertyType, area: searchParams?.area,
     generatedAt: new Date().toLocaleDateString("ar-SA"),
     nearbyCategories: nearbyData.length > 0 ? nearbyData : undefined,
@@ -88,7 +102,7 @@ export default function Home() {
             <SatelliteView coordinates={coordinates} />
             <NearbyPlaces categories={nearbyData} isLoading={nearbyLoading} />
             <TransportInfo estimate={priceEstimate} />
-            <PriceEstimate estimate={priceEstimate} isLoading={isLoading} detectedDistrict={detectedDistrict} />
+            <PriceEstimate estimate={priceEstimate} isLoading={isLoading} detectedDistrict={detectedDistrict} nearbyCategories={nearbyData} nearbyLoading={nearbyLoading} />
             {priceEstimate && !isLoading && reportData && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <p className="text-sm font-semibold text-gray-700 mb-1">{t("exportTitle")}</p>

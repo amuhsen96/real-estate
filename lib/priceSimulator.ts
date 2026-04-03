@@ -52,19 +52,27 @@ export interface Transaction {
   source?: string;
 }
 
+export interface ScoreBreakdown {
+  metro:     number;   // 0–3
+  geography: number;   // 0–2
+  market:    number;   // 0–1
+  // services (0–4) is calculated client-side from Overpass data
+}
+
 export interface PriceEstimate {
   pricePerSqmSale: number;
   monthlyRent: number;
   priceRangeMin: number;
   priceRangeMax: number;
-  locationScore: number;
-  metroBonus?: number;      // مقدار الزيادة في الدرجة بسبب القرب من المترو
+  locationScore: number;      // base score: metro+geo+market (0–6), services added client-side
+  scoreBreakdown: ScoreBreakdown;
+  metroBonus?: number;        // kept for backward-compat (same as scoreBreakdown.metro)
   cityName: string;
   areaClassification: string;
   dataSource: "real" | "simulation";
   transactionCount?: number;
-  confidence?: number;      // 0–100 مستوى الثقة بالتقدير
-  nearbyCount?: number;     // عدد الصفقات ضمن 20 كم (مع إحداثيات)
+  confidence?: number;
+  nearbyCount?: number;
   nearestMetro?: NearestMetro;
   nearestStadium?: NearestStadium;
 }
@@ -378,27 +386,30 @@ export function estimatePrice(
   let cityName: string;
   let locationScore: number;
   let areaClassification: string;
+  const scoreBreakdown: ScoreBreakdown = { metro: 0, geography: 0, market: 0.5 };
 
+  // ── الموقع الجغرافي (0–2 نقطة) ────────────────────────────────────────────
   if (city) {
     const centerFactor = Math.max(0.6, 1 - (distFromCenter / city.radius) * 0.4);
     cityName = city.name;
-    locationScore = Math.round(Math.min(10, 5 + centerFactor * 5) * 10) / 10;
+    scoreBreakdown.geography = Math.round(Math.min(2.0, centerFactor * 2.0) * 10) / 10;
   } else {
     cityName = "منطقة أخرى";
-    locationScore = 3;
+    scoreBreakdown.geography = 0.5;
   }
 
-  // ── تأثير المترو على الموقع (الرياض فقط) ─────────────────────────────────
-  let metroBonus = 0;
+  // ── محطة المترو (0–3 نقاط) ────────────────────────────────────────────────
   let nearestMetro: NearestMetro | undefined;
 
-  if (metroStations && metroStations.length > 0 && cityName === "الرياض") {
+  if (metroStations && metroStations.length > 0) {
     const nearest = findNearestItem(coords, metroStations);
     if (nearest) {
-      if (nearest.distKm <= 0.5)      metroBonus = 1.5;
-      else if (nearest.distKm <= 1.0) metroBonus = 1.0;
-      else if (nearest.distKm <= 2.0) metroBonus = 0.5;
-      else if (nearest.distKm <= 5.0) metroBonus = 0.2;
+      const d = nearest.distKm;
+      scoreBreakdown.metro =
+        d <= 0.5 ? 3.0 :
+        d <= 1.0 ? 2.5 :
+        d <= 2.0 ? 1.5 :
+        d <= 5.0 ? 0.7 : 0;
 
       nearestMetro = {
         nameAr: nearest.nameAr,
@@ -410,9 +421,15 @@ export function estimatePrice(
     }
   }
 
-  if (metroBonus > 0) {
-    locationScore = Math.round(Math.min(10, locationScore + metroBonus) * 10) / 10;
-  }
+  // درجة أساسية = جغرافي + مترو + سوق (يُحدَّث السوق لاحقاً إن توفرت بيانات)
+  // الخدمات والمرافق (0–4) تُضاف client-side من بيانات Overpass
+  const computeBaseScore = () =>
+    Math.round((scoreBreakdown.geography + scoreBreakdown.metro + scoreBreakdown.market) * 10) / 10;
+
+  locationScore = computeBaseScore();
+
+  // اجعل metroBonus متوافقاً مع الإصدار السابق
+  const metroBonus = scoreBreakdown.metro;
 
   // ── أقرب استاد ────────────────────────────────────────────────────────────
   let nearestStadium: NearestStadium | undefined;
@@ -465,30 +482,27 @@ export function estimatePrice(
           cityTx.reduce((s, t) => s + t.pricePerSqm, 0) / cityTx.length;
         const ratio = districtAvg / cityAvg;
 
-        // تحويل النسبة لدرجة 0–10
-        const priceScore =
-          ratio >= 1.5 ? 10.0 :
-          ratio >= 1.3 ? 8.5  :
-          ratio >= 1.1 ? 7.0  :
-          ratio >= 0.9 ? 6.0  :
-          ratio >= 0.7 ? 4.5  : 3.0;
+        // ── السوق العقاري (0–1 نقطة) ────────────────────────────────────────
+        scoreBreakdown.market =
+          ratio >= 1.5 ? 1.0  :
+          ratio >= 1.3 ? 0.9  :
+          ratio >= 1.1 ? 0.75 :
+          ratio >= 0.9 ? 0.6  :
+          ratio >= 0.7 ? 0.4  : 0.25;
 
-        // مزج: 70% سعر + 30% موقع
-        locationScore = Math.round(
-          Math.min(10, 0.7 * priceScore + 0.3 * locationScore) * 10
-        ) / 10;
-
+        locationScore = computeBaseScore();
         usedPriceRatio = true;
       }
     }
 
-    // تصنيف لغوي من الدرجة النهائية
-    if (locationScore >= 8)      areaClassification = "منطقة راقية";
-    else if (locationScore >= 6) areaClassification = "منطقة جيدة";
-    else if (locationScore >= 4) areaClassification = "منطقة متوسطة";
+    // تصنيف لغوي: يأخذ في الحسبان أن الدرجة الكاملة = base(0–6) + خدمات(0–4)
+    // نفترض متوسط خدمات = 2 للحصول على تقدير أولي قبل تحميل Overpass
+    const estimatedFull = Math.min(10, locationScore + 2);
+    if (estimatedFull >= 8)      areaClassification = "منطقة راقية";
+    else if (estimatedFull >= 6) areaClassification = "منطقة جيدة";
+    else if (estimatedFull >= 4) areaClassification = "منطقة متوسطة";
     else                         areaClassification = "منطقة نائية";
 
-    // تجاهل متغير usedPriceRatio في البناء (مستقبلاً قد يُعرض في الـ UI)
     void usedPriceRatio;
   }
 
@@ -530,6 +544,7 @@ export function estimatePrice(
       priceRangeMin: Math.round(Math.max(pricePerSqm - spread, pricePerSqm * 0.7)),
       priceRangeMax: Math.round(pricePerSqm + spread),
       locationScore,
+      scoreBreakdown,
       metroBonus: metroBonus > 0 ? metroBonus : undefined,
       cityName,
       areaClassification,
@@ -566,6 +581,7 @@ export function estimatePrice(
     priceRangeMin: Math.round(sale * 0.8),
     priceRangeMax: Math.round(sale * 1.2),
     locationScore,
+    scoreBreakdown,
     metroBonus: metroBonus > 0 ? metroBonus : undefined,
     cityName,
     areaClassification,
