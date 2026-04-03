@@ -63,6 +63,7 @@ export default function Home() {
     coords: coordinates, estimate: priceEstimate, district: detectedDistrict,
     propertyType: searchParams?.propertyType, area: searchParams?.area,
     generatedAt: new Date().toLocaleDateString("ar-SA"),
+    nearbyCategories: nearbyData.length > 0 ? nearbyData : undefined,
   } : null;
 
   return (
