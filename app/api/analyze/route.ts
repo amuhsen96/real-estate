@@ -58,20 +58,25 @@ interface RawRow {
   property_type: string;
   deal_type: string;
   region: string;
-  area: number;
-  price: number;
+  area: string | number;   // varchar في قاعدة البيانات
+  price: string | number;  // varchar في قاعدة البيانات
+}
+
+function toNum(val: string | number | undefined | null): number {
+  if (val == null || val === "") return 0;
+  return parseFloat(String(val).replace(/,/g, "")) || 0;
 }
 
 function computeStats(rows: RawRow[]): GroupStats {
   const rawPpsm = rows.map((r) => {
-    const a = Number(r.area);
-    const p = Number(r.price);
+    const a = toNum(r.area);
+    const p = toNum(r.price);
     return a > 0 ? Math.round(p / a) : 0;
   }).filter((v) => v > 0);
 
   const ppsm = removeOutliers(rawPpsm);
-  const prices = rows.map((r) => Number(r.price));
-  const areas = rows.map((r) => Number(r.area));
+  const prices = rows.map((r) => toNum(r.price));
+  const areas  = rows.map((r) => toNum(r.area));
 
   return {
     count: rows.length,
@@ -93,7 +98,7 @@ export async function GET(request: NextRequest) {
   const filterPropertyType = searchParams.get("propertyType");
 
   // بناء جملة WHERE ديناميكياً
-  const conditions: string[] = ["price > 0", "area > 0"];
+  const conditions: string[] = ["(price + 0) > 0", "(area + 0) > 0"];
   const params: unknown[] = [];
 
   if (filterCity) { conditions.push("city = ?"); params.push(filterCity); }

@@ -48,7 +48,7 @@ async function loadTransactionsByCity(city: string): Promise<Transaction[]> {
   const [rows] = await pool.query(
     `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
      FROM \`${table}\`
-     WHERE city LIKE ? AND price > 0 AND area > 0`,
+     WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0`,
     [`%${city}%`]
   );
   return (rows as Record<string, unknown>[]).map(rowToTransaction);
@@ -60,7 +60,7 @@ async function loadTransactionsFallback(): Promise<Transaction[]> {
   const [rows] = await pool.query(
     `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
      FROM \`${table}\`
-     WHERE price > 0 AND area > 0
+     WHERE (price + 0) > 0 AND (area + 0) > 0
      ORDER BY data_date DESC
      LIMIT 2000`
   );
