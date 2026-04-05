@@ -1,31 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
 import * as XLSX from "xlsx";
-import type { Transaction } from "@/lib/priceSimulator";
+import pool from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const DB_PATH = join(process.cwd(), "data", "transactions.json");
-
-function readTransactions(): Transaction[] {
-  try {
-    return JSON.parse(readFileSync(DB_PATH, "utf-8"));
-  } catch {
-    return [];
-  }
-}
-
-function writeTransactions(transactions: Transaction[]) {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  writeFileSync(DB_PATH, JSON.stringify(transactions, null, 2), "utf-8");
-}
-
-function detectSep(line: string): string {
-  if (line.includes("\t")) return "\t";
-  if (line.includes(";")) return ";";
-  return ",";
-}
+const TABLE = process.env.DB_TABLE ?? "aqar";
 
 const HEADERS: Record<string, string> = {
   المدينة: "city", city: "city",
@@ -41,10 +20,28 @@ const HEADERS: Record<string, string> = {
   المصدر: "source", source: "source",
 };
 
-function parseCSV(raw: string): { transactions: Transaction[]; preview: string[][] } {
+function detectSep(line: string): string {
+  if (line.includes("\t")) return "\t";
+  if (line.includes(";")) return ";";
+  return ",";
+}
+
+interface ParsedRow {
+  city: string;
+  district: string;
+  propertyType: string;
+  area: number;
+  price: number;
+  dealType?: string;
+  region?: string;
+  date?: string;
+  source?: string;
+}
+
+function parseCSV(raw: string): { rows: ParsedRow[]; preview: string[][] } {
   const cleaned = raw.replace(/^\uFEFF/, "").trim();
   const lines = cleaned.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length === 0) return { transactions: [], preview: [] };
+  if (lines.length === 0) return { rows: [], preview: [] };
 
   const sep = detectSep(lines[0]);
 
@@ -82,14 +79,11 @@ function parseCSV(raw: string): { transactions: Transaction[]; preview: string[]
     dataLines = lines;
   }
 
-  // Build preview (up to 5 data rows + header)
   const preview: string[][] = [];
   if (hasHeader) preview.push(firstCells);
-  for (const line of dataLines.slice(0, 5)) {
-    preview.push(splitLine(line));
-  }
+  for (const line of dataLines.slice(0, 5)) preview.push(splitLine(line));
 
-  const results: Transaction[] = [];
+  const rows: ParsedRow[] = [];
 
   for (const line of dataLines) {
     if (!line.trim()) continue;
@@ -105,29 +99,22 @@ function parseCSV(raw: string): { transactions: Transaction[]; preview: string[]
 
     if (!city || !district || isNaN(area) || isNaN(price) || area <= 0 || price <= 0) continue;
 
-    const lat = row.lat ? parseFloat(row.lat) : undefined;
-    const lng = row.lng ? parseFloat(row.lng) : undefined;
-
-    results.push({
-      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    rows.push({
       city,
       district,
       propertyType,
       area,
       price,
-      pricePerSqm: Math.round(price / area),
       ...(row.dealType ? { dealType: row.dealType.trim() } : {}),
       ...(row.region ? { region: row.region.trim() } : {}),
-      ...(lat && lng && !isNaN(lat) && !isNaN(lng) ? { lat, lng } : {}),
       ...(row.date ? { date: row.date } : {}),
       ...(row.source ? { source: row.source } : {}),
     });
   }
 
-  return { transactions: results, preview };
+  return { rows, preview };
 }
 
-// POST — استقبال ملف خام عبر FormData (xlsx أو csv)
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -146,11 +133,10 @@ export async function POST(request: NextRequest) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       csvContent = XLSX.utils.sheet_to_csv(ws);
     } else {
-      // csv / txt
       csvContent = await (file as File).text();
     }
 
-    const { transactions: parsed, preview } = parseCSV(csvContent);
+    const { rows: parsed, preview } = parseCSV(csvContent);
 
     if (parsed.length === 0) {
       return NextResponse.json(
@@ -159,11 +145,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const transactions = readTransactions();
-    transactions.push(...parsed);
-    writeTransactions(transactions);
+    // Bulk INSERT بـ batches
+    const batchSize = 500;
+    let inserted = 0;
+    for (let i = 0; i < parsed.length; i += batchSize) {
+      const batch = parsed.slice(i, i + batchSize);
+      const values = batch.map((row) => [
+        row.city, row.district, row.propertyType, row.area, row.price,
+        row.dealType ?? null, row.region ?? null, row.date ?? null,
+        row.source ?? null, "upload",
+      ]);
+      await pool.query(
+        `INSERT INTO \`${TABLE}\` (city, district, property_type, area, price, deal_type, region, data_date, source, add_type) VALUES ?`,
+        [values]
+      );
+      inserted += batch.length;
+    }
 
-    return NextResponse.json({ added: parsed.length, total: transactions.length, preview });
+    const [[countRow]] = await pool.query(`SELECT COUNT(*) as total FROM \`${TABLE}\``) as [Record<string, number>[], unknown];
+    return NextResponse.json({ added: inserted, total: countRow.total, preview });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `خطأ في معالجة الملف: ${msg}` }, { status: 500 });

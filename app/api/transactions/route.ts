@@ -1,26 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import pool, { rowToTransaction } from "@/lib/db";
 import type { Transaction } from "@/lib/priceSimulator";
 
-// رفع حد حجم الطلب إلى 20MB لدعم ملفات Excel الكبيرة
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const DB_PATH = join(process.cwd(), "data", "transactions.json");
-
-function readTransactions(): Transaction[] {
-  try {
-    return JSON.parse(readFileSync(DB_PATH, "utf-8"));
-  } catch {
-    return [];
-  }
-}
-
-function writeTransactions(transactions: Transaction[]) {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  writeFileSync(DB_PATH, JSON.stringify(transactions, null, 2), "utf-8");
-}
+const TABLE = process.env.DB_TABLE ?? "aqar";
 
 function detectSep(line: string): string {
   if (line.includes("\t")) return "\t";
@@ -29,14 +14,12 @@ function detectSep(line: string): string {
 }
 
 function parseCSV(raw: string): Transaction[] {
-  // إزالة BOM إذا وُجد
   const cleaned = raw.replace(/^\uFEFF/, "").trim();
   const lines = cleaned.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) return [];
 
   const sep = detectSep(lines[0]);
 
-  // Arabic and English header aliases
   const HEADERS: Record<string, string> = {
     المدينة: "city", city: "city",
     الحي: "district", district: "district", الحي_أو_المنطقة: "district",
@@ -61,7 +44,6 @@ function parseCSV(raw: string): Transaction[] {
     colMap = firstCells.map((c) => HEADERS[c] ?? c.toLowerCase());
     dataLines = lines.slice(1);
   } else {
-    // Assume fixed order: city, district, type, area, price[, lat, lng]
     colMap = ["city", "district", "propertyType", "area", "price", "lat", "lng"];
     dataLines = lines;
   }
@@ -72,9 +54,7 @@ function parseCSV(raw: string): Transaction[] {
     if (!line.trim()) continue;
     const cells = line.split(sep).map((c) => c.trim().replace(/^["']|["']$/g, ""));
     const row: Record<string, string> = {};
-    colMap.forEach((col, i) => {
-      if (cells[i] !== undefined) row[col] = cells[i];
-    });
+    colMap.forEach((col, i) => { if (cells[i] !== undefined) row[col] = cells[i]; });
 
     const city = row.city?.trim();
     const district = row.district?.trim();
@@ -82,10 +62,8 @@ function parseCSV(raw: string): Transaction[] {
     const area = parseFloat(row.area ?? "");
     const price = parseFloat(row.price?.replace(/,/g, "") ?? "");
 
-    if (!city || !district || isNaN(area) || isNaN(price) || area <= 0 || price <= 0)
-      continue;
+    if (!city || !district || isNaN(area) || isNaN(price) || area <= 0 || price <= 0) continue;
 
-    const pricePerSqm = Math.round(price / area);
     const lat = row.lat ? parseFloat(row.lat) : undefined;
     const lng = row.lng ? parseFloat(row.lng) : undefined;
 
@@ -96,7 +74,7 @@ function parseCSV(raw: string): Transaction[] {
       propertyType,
       area,
       price,
-      pricePerSqm,
+      pricePerSqm: Math.round(price / area),
       ...(row.dealType ? { dealType: row.dealType.trim() } : {}),
       ...(row.region ? { region: row.region.trim() } : {}),
       ...(lat && lng && !isNaN(lat) && !isNaN(lng) ? { lat, lng } : {}),
@@ -108,17 +86,22 @@ function parseCSV(raw: string): Transaction[] {
   return results;
 }
 
-// GET — list all transactions
+// GET — list recent transactions
 export async function GET() {
-  const transactions = readTransactions();
+  const [rows] = await pool.query(
+    `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
+     FROM \`${TABLE}\`
+     ORDER BY data_date DESC
+     LIMIT 500`
+  );
+  const transactions = (rows as Record<string, unknown>[]).map(rowToTransaction);
   return NextResponse.json(transactions);
 }
 
-// POST — add one transaction or bulk CSV
+// POST — add one transaction (manual) or bulk CSV
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const transactions = readTransactions();
 
     if (body.type === "csv") {
       const parsed = parseCSV(body.data ?? "");
@@ -128,32 +111,65 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      transactions.push(...parsed);
-      writeTransactions(transactions);
-      return NextResponse.json({ added: parsed.length, total: transactions.length });
+
+      // Bulk INSERT بـ batches
+      const batchSize = 500;
+      let inserted = 0;
+      for (let i = 0; i < parsed.length; i += batchSize) {
+        const batch = parsed.slice(i, i + batchSize);
+        const values = batch.map((tx) => [
+          tx.city, tx.district, tx.propertyType, tx.area, tx.price,
+          tx.dealType ?? null, tx.region ?? null, tx.date ?? null,
+          tx.source ?? null, "csv",
+        ]);
+        await pool.query(
+          `INSERT INTO \`${TABLE}\` (city, district, property_type, area, price, deal_type, region, data_date, source, add_type) VALUES ?`,
+          [values]
+        );
+        inserted += batch.length;
+      }
+
+      const [[countRow]] = await pool.query(`SELECT COUNT(*) as total FROM \`${TABLE}\``) as [Record<string, number>[], unknown];
+      return NextResponse.json({ added: inserted, total: countRow.total });
     }
 
-    // Single transaction
-    const { city, district, propertyType, area, price, lat, lng, date, source } = body;
+    // إدخال يدوي مفرد
+    const { city, district, propertyType, area, price, dealType, region, date, source } = body;
     if (!city || !district || !area || !price) {
       return NextResponse.json({ error: "الحقول المطلوبة: المدينة، الحي، المساحة، السعر" }, { status: 400 });
     }
 
+    const [result] = await pool.query(
+      `INSERT INTO \`${TABLE}\` (city, district, property_type, area, price, deal_type, region, data_date, source, add_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')`,
+      [
+        String(city).trim(),
+        String(district).trim(),
+        String(propertyType ?? "غير محدد").trim(),
+        Number(area),
+        Number(price),
+        dealType ?? null,
+        region ?? null,
+        date ?? null,
+        source ?? null,
+      ]
+    ) as [{ insertId: number }, unknown];
+
+    const insertedId = (result as { insertId: number }).insertId;
     const tx: Transaction = {
-      id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      city: city.trim(),
-      district: district.trim(),
-      propertyType: (propertyType ?? "غير محدد").trim(),
+      id: String(insertedId),
+      city: String(city).trim(),
+      district: String(district).trim(),
+      propertyType: String(propertyType ?? "غير محدد").trim(),
       area: Number(area),
       price: Number(price),
       pricePerSqm: Math.round(Number(price) / Number(area)),
-      ...(lat && lng ? { lat: Number(lat), lng: Number(lng) } : {}),
+      ...(dealType ? { dealType } : {}),
+      ...(region ? { region } : {}),
       ...(date ? { date } : {}),
       ...(source ? { source } : {}),
     };
 
-    transactions.push(tx);
-    writeTransactions(transactions);
     return NextResponse.json(tx, { status: 201 });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -167,20 +183,21 @@ export async function DELETE(request: NextRequest) {
   const all = request.nextUrl.searchParams.get("all");
 
   if (all === "true") {
-    writeTransactions([]);
+    await pool.query(`DELETE FROM \`${TABLE}\``);
     return NextResponse.json({ deleted: "all", total: 0 });
   }
 
   if (!id) return NextResponse.json({ error: "id مطلوب" }, { status: 400 });
 
-  let transactions = readTransactions();
-  const before = transactions.length;
-  transactions = transactions.filter((t) => t.id !== id);
+  const [result] = await pool.query(
+    `DELETE FROM \`${TABLE}\` WHERE ad_no = ?`,
+    [id]
+  ) as [{ affectedRows: number }, unknown];
 
-  if (transactions.length === before) {
+  if ((result as { affectedRows: number }).affectedRows === 0) {
     return NextResponse.json({ error: "لم يتم إيجاد الصفقة" }, { status: 404 });
   }
 
-  writeTransactions(transactions);
-  return NextResponse.json({ deleted: id, total: transactions.length });
+  const [[countRow]] = await pool.query(`SELECT COUNT(*) as total FROM \`${TABLE}\``) as [Record<string, number>[], unknown];
+  return NextResponse.json({ deleted: id, total: countRow.total });
 }
