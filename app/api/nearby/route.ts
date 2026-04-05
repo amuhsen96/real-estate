@@ -106,23 +106,29 @@ function classifyElement(tags: Record<string, string>): string | null {
   return null;
 }
 
+/** جلب من mirror واحد — يرفض إذا أرجع HTML أو خطأ */
+async function tryMirror(url: string, query: string): Promise<{ elements: OverpassElement[] }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `data=${encodeURIComponent(query)}`,
+    signal: AbortSignal.timeout(25000),
+  });
+  // Overpass يرجع HTML عند الضغط — نحاول parse JSON مباشرة
+  const text = await res.text();
+  if (!text.trim().startsWith("{")) throw new Error("non-JSON response");
+  const data = JSON.parse(text);
+  if (!Array.isArray(data?.elements)) throw new Error("invalid structure");
+  return data;
+}
+
+/** تجربة كل الـ mirrors بالتوازي — أول استجابة ناجحة تفوز */
 async function fetchOverpass(query: string): Promise<{ elements: OverpassElement[] } | null> {
-  for (const url of OVERPASS_URLS) {
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: AbortSignal.timeout(28000),
-      });
-      const contentType = res.headers.get("content-type") ?? "";
-      if (!res.ok || !contentType.includes("json")) continue;
-      return await res.json();
-    } catch {
-      continue;
-    }
+  try {
+    return await Promise.any(OVERPASS_URLS.map((url) => tryMirror(url, query)));
+  } catch {
+    return null;
   }
-  return null;
 }
 
 export async function POST(request: NextRequest) {

@@ -3,15 +3,61 @@
 import { useI18n, translations } from "@/lib/i18n";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
 
+interface NearbyCategory {
+  category: string;
+  places: { distance: number | null }[];
+}
+
 interface PriceEstimateProps {
   estimate: PriceEstimateType | null;
   isLoading: boolean;
   detectedDistrict?: string | null;
+  nearbyCategories?: NearbyCategory[];
+  nearbyLoading?: boolean;
 }
 
 function formatNumber(num: number): string { return num.toLocaleString("en-US"); }
-function getScoreColor(s: number) { return s >= 8 ? "text-green-600" : s >= 6 ? "text-blue-600" : s >= 4 ? "text-amber-600" : "text-red-600"; }
-function getScoreBg(s: number) { return s >= 8 ? "bg-green-50 border-green-200" : s >= 6 ? "bg-blue-50 border-blue-200" : s >= 4 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"; }
+
+function getScoreColor(s: number) {
+  return s >= 8 ? "text-green-600" : s >= 6 ? "text-blue-600" : s >= 4 ? "text-amber-600" : "text-red-600";
+}
+function getScoreBg(s: number) {
+  return s >= 8 ? "bg-green-50 border-green-200" : s >= 6 ? "bg-blue-50 border-blue-200" : s >= 4 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+}
+
+/** حساب نقاط الخدمات (0–4) من بيانات Overpass */
+function calcServicesScore(categories: NearbyCategory[]): number {
+  const activeCats = categories.filter(
+    (c) => c.places.some((p) => p.distance != null && p.distance <= 2000)
+  ).length;
+  return activeCats >= 8 ? 4.0
+    : activeCats >= 6 ? 3.2
+    : activeCats >= 4 ? 2.5
+    : activeCats >= 2 ? 1.5
+    : activeCats >= 1 ? 0.8
+    : 0;
+}
+
+function classifyArea(score: number): string {
+  if (score >= 8) return "منطقة راقية";
+  if (score >= 6) return "منطقة جيدة";
+  if (score >= 4) return "منطقة متوسطة";
+  return "منطقة نائية";
+}
+
+function ScoreBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = Math.round((value / max) * 100);
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs font-semibold text-gray-700 w-12 text-left shrink-0">
+        {value.toFixed(1)}/{max}
+      </span>
+    </div>
+  );
+}
 
 function ConfidenceBar({ value }: { value: number }) {
   const color = value >= 80 ? "bg-green-500" : value >= 60 ? "bg-blue-500" : value >= 40 ? "bg-amber-500" : "bg-red-400";
@@ -25,7 +71,9 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-export default function PriceEstimate({ estimate, isLoading, detectedDistrict }: PriceEstimateProps) {
+export default function PriceEstimate({
+  estimate, isLoading, detectedDistrict, nearbyCategories, nearbyLoading,
+}: PriceEstimateProps) {
   const { t, lang } = useI18n();
 
   if (isLoading) {
@@ -40,12 +88,46 @@ export default function PriceEstimate({ estimate, isLoading, detectedDistrict }:
   if (!estimate) return null;
   const isReal = estimate.dataSource === "real";
 
+  // حساب نقاط الخدمات وإضافتها للنتيجة الأساسية
+  const servicesScore = nearbyCategories ? calcServicesScore(nearbyCategories) : 0;
+  const finalScore    = Math.round(Math.min(10, estimate.locationScore + servicesScore) * 10) / 10;
+  const finalClass    = nearbyCategories ? classifyArea(finalScore) : estimate.areaClassification;
+
+  const bd = estimate.scoreBreakdown;
+
   // ترجمة تصنيف المنطقة
-  const areaClassEn = (translations.areaClass.en as Record<string, string>)[estimate.areaClassification] ?? estimate.areaClassification;
-  const areaClassDisplay = lang === "ar" ? estimate.areaClassification : areaClassEn;
+  const areaClassEn = (translations.areaClass.en as Record<string, string>)[finalClass] ?? finalClass;
+  const areaClassDisplay = lang === "ar" ? finalClass : areaClassEn;
 
   const confidenceLabel = (v: number) =>
     v >= 80 ? t("confidenceHigh") : v >= 60 ? t("confidenceMed") : v >= 40 ? t("confidenceLow") : t("confidenceWeak");
+
+  const scoreRows = [
+    {
+      label: lang === "en" ? "Services & Facilities (2 km)" : "الخدمات والمرافق (2 كم)",
+      value: nearbyLoading ? null : servicesScore,
+      max: 4,
+      color: "bg-purple-500",
+    },
+    {
+      label: lang === "en" ? "Metro Station" : "محطة المترو",
+      value: bd.metro,
+      max: 3,
+      color: "bg-blue-500",
+    },
+    {
+      label: lang === "en" ? "Geographic Location" : "الموقع الجغرافي",
+      value: bd.geography,
+      max: 2,
+      color: "bg-teal-500",
+    },
+    {
+      label: lang === "en" ? "Real Estate Market" : "السوق العقاري",
+      value: bd.market,
+      max: 1,
+      color: "bg-amber-500",
+    },
+  ];
 
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
@@ -72,18 +154,33 @@ export default function PriceEstimate({ estimate, isLoading, detectedDistrict }:
       </div>
 
       <div className="p-6 space-y-5">
-        <div className={`${getScoreBg(estimate.locationScore)} border rounded-xl p-4 flex items-center justify-between`}>
-          <div>
+
+        {/* مؤشر جودة الموقع */}
+        <div className={`${getScoreBg(finalScore)} border rounded-xl p-4`}>
+          <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-gray-700">{t("locScore")}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {t("locScoreNote")}
-              {estimate.metroBonus && estimate.metroBonus > 0 && (
-                <span className="mx-1 text-blue-600 font-medium">{t("metroBonus")} (+{estimate.metroBonus})</span>
-              )}
-            </p>
+            <div className={`text-3xl font-bold ${getScoreColor(finalScore)}`}>
+              {nearbyLoading
+                ? <span className="text-2xl text-gray-400">{estimate.locationScore}<span className="text-sm font-normal text-gray-300">+…/10</span></span>
+                : <>{finalScore}<span className="text-sm font-normal text-gray-400">/10</span></>
+              }
+            </div>
           </div>
-          <div className={`text-3xl font-bold ${getScoreColor(estimate.locationScore)}`}>
-            {estimate.locationScore}<span className="text-sm font-normal text-gray-400">/10</span>
+
+          {/* تفاصيل المكونات */}
+          <div className="space-y-2">
+            {scoreRows.map((row) => (
+              <div key={row.label} className="grid grid-cols-[1fr_auto] gap-x-3 items-center">
+                <span className="text-xs text-gray-500 truncate">{row.label}</span>
+                {row.value === null ? (
+                  <span className="text-xs text-gray-400 w-24 text-left">{lang === "en" ? "loading…" : "جاري التحميل"}</span>
+                ) : (
+                  <div className="w-24">
+                    <ScoreBar value={row.value} max={row.max} color={row.color} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
