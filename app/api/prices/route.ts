@@ -54,6 +54,19 @@ async function loadTransactionsByCity(city: string): Promise<Transaction[]> {
   return (rows as Record<string, unknown>[]).map(rowToTransaction);
 }
 
+/** fallback: جلب أقرب 2000 صفقة بدون فلتر مدينة */
+async function loadTransactionsFallback(): Promise<Transaction[]> {
+  const table = process.env.DB_TABLE ?? "aqar";
+  const [rows] = await pool.query(
+    `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
+     FROM \`${table}\`
+     WHERE price > 0 AND area > 0
+     ORDER BY data_date DESC
+     LIMIT 2000`
+  );
+  return (rows as Record<string, unknown>[]).map(rowToTransaction);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -72,10 +85,13 @@ export async function POST(request: NextRequest) {
 
     const detectedDistrict = (userDistrict as string | undefined) ?? location.district;
 
-    // جلب صفقات المدينة المكتشفة فقط
+    // جلب صفقات المدينة المكتشفة فقط — fallback لـ 2000 صفقة عامة إن لم تُكتشف المدينة
     let transactions: Transaction[] = [];
     if (location.city) {
       transactions = await loadTransactionsByCity(location.city);
+    }
+    if (transactions.length === 0) {
+      transactions = await loadTransactionsFallback();
     }
 
     const estimate = estimatePrice(
