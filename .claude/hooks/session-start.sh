@@ -17,10 +17,3 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 npm install
-
-# تشغيل MariaDB تلقائياً إن لم يكن مشغّلاً
-if ! pgrep -x mariadbd > /dev/null 2>&1 && ! pgrep -x mysqld > /dev/null 2>&1; then
-  echo "Starting MariaDB..."
-  mysqld_safe --no-defaults --skip-networking=0 --user=mysql > /dev/null 2>&1 &
-  sleep 4
-fi
