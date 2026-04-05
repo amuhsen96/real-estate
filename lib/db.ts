@@ -14,35 +14,46 @@ const pool = mysql.createPool({
 
 export default pool;
 
+/** تحويل قيمة varchar (قد تحتوي فواصل) إلى رقم */
+function toNum(val: unknown): number {
+  if (val == null || val === "") return 0;
+  return parseFloat(String(val).replace(/,/g, "")) || 0;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function rowToTransaction(row: Record<string, any>): Transaction {
-  const area = Number(row.area) || 0;
-  const price = Number(row.price) || 0;
+  const area  = toNum(row.area);
+  const price = toNum(row.price);
   return {
-    id: String(row.ad_no ?? row.id ?? ""),
+    id: String(row.ad_no ?? ""),
     city: row.city ?? "",
     district: row.district ?? "",
     propertyType: row.property_type ?? "غير محدد",
     area,
     price,
     pricePerSqm: area > 0 ? Math.round(price / area) : 0,
-    ...(row.deal_type ? { dealType: row.deal_type } : {}),
-    ...(row.region ? { region: row.region } : {}),
-    ...(row.data_date ? { date: String(row.data_date) } : {}),
-    ...(row.source ? { source: row.source } : {}),
+    ...(row.deal_type  ? { dealType: row.deal_type }      : {}),
+    ...(row.region     ? { region: row.region }           : {}),
+    ...(row.data_date  ? { date: String(row.data_date) }  : {}),
+    ...(row.source     ? { source: row.source }           : {}),
   };
 }
 
-/** يضيف عمود source إذا لم يكن موجوداً في الجدول */
+/** يضيف عمود source وindex على city إذا لم يكونا موجودَين */
 export async function ensureSchema(): Promise<void> {
+  const table = process.env.DB_TABLE ?? "aqar";
+  // إضافة عمود source (تجاهل الخطأ إن كان موجوداً)
   try {
-    const table = process.env.DB_TABLE ?? "aqar";
     await pool.query(
-      `ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS source VARCHAR(255) NULL DEFAULT NULL`
+      `ALTER TABLE \`${table}\` ADD COLUMN source VARCHAR(255) NULL DEFAULT NULL`
     );
-  } catch {
-    // MySQL < 8 لا تدعم IF NOT EXISTS في ALTER COLUMN — نتجاهل الخطأ
-  }
+  } catch { /* already exists */ }
+  // إضافة index على city لتسريع الاستعلامات
+  try {
+    await pool.query(
+      `CREATE INDEX idx_city ON \`${table}\` (city(100))`
+    );
+  } catch { /* already exists */ }
 }
 
 // تنفيذ ensureSchema مرة واحدة عند بدء التشغيل

@@ -58,20 +58,29 @@ interface RawRow {
   property_type: string;
   deal_type: string;
   region: string;
-  area: number;
-  price: number;
+  area: string | number;   // varchar في قاعدة البيانات
+  price: string | number;  // varchar في قاعدة البيانات
+}
+
+function toNum(val: string | number | undefined | null): number {
+  if (val == null || val === "") return 0;
+  return parseFloat(String(val).replace(/,/g, "")) || 0;
 }
 
 function computeStats(rows: RawRow[]): GroupStats {
   const rawPpsm = rows.map((r) => {
-    const a = Number(r.area);
-    const p = Number(r.price);
+    const a = toNum(r.area);
+    const p = toNum(r.price);
     return a > 0 ? Math.round(p / a) : 0;
   }).filter((v) => v > 0);
 
-  const ppsm = removeOutliers(rawPpsm);
-  const prices = rows.map((r) => Number(r.price));
-  const areas = rows.map((r) => Number(r.area));
+  const ppsm   = removeOutliers(rawPpsm);
+  const prices = rows.map((r) => toNum(r.price));
+  const areas  = rows.map((r) => toNum(r.area));
+
+  // استخدام reduce بدل spread لتجنب stack overflow مع المصفوفات الكبيرة
+  const minPrice = prices.reduce((m, v) => (v > 0 && v < m ? v : m), Infinity);
+  const maxPrice = prices.reduce((m, v) => (v > m ? v : m), 0);
 
   return {
     count: rows.length,
@@ -79,8 +88,8 @@ function computeStats(rows: RawRow[]): GroupStats {
     avgPricePerSqm: ppsm.length > 0 ? Math.round(ppsm.reduce((s, v) => s + v, 0) / ppsm.length) : 0,
     p25PricePerSqm: Math.round(percentile(ppsm, 25)),
     p75PricePerSqm: Math.round(percentile(ppsm, 75)),
-    minPrice: prices.length > 0 ? Math.min(...prices) : 0,
-    maxPrice: prices.length > 0 ? Math.max(...prices) : 0,
+    minPrice: isFinite(minPrice) ? minPrice : 0,
+    maxPrice,
     medianArea: Math.round(median(areas)),
   };
 }
@@ -93,7 +102,7 @@ export async function GET(request: NextRequest) {
   const filterPropertyType = searchParams.get("propertyType");
 
   // بناء جملة WHERE ديناميكياً
-  const conditions: string[] = ["price > 0", "area > 0"];
+  const conditions: string[] = ["(price + 0) > 0", "(area + 0) > 0"];
   const params: unknown[] = [];
 
   if (filterCity) { conditions.push("city = ?"); params.push(filterCity); }
