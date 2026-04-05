@@ -32,39 +32,47 @@ async function detectLocation(lat: number, lng: number): Promise<{ city: string 
     if (!res.ok) return { city: null, district: null };
     const data = await res.json();
     const addr = data.address ?? {};
-    const city =
-      addr.city ?? addr.town ?? addr.municipality ?? addr.county ?? null;
-    const district =
-      addr.suburb ?? addr.neighbourhood ?? addr.quarter ?? addr.village ?? null;
+    const city     = addr.city ?? addr.town ?? addr.municipality ?? addr.county ?? null;
+    const district = addr.suburb ?? addr.neighbourhood ?? addr.quarter ?? addr.village ?? null;
     return { city, district };
   } catch {
     return { city: null, district: null };
   }
 }
 
-/** جلب صفقات مدينة معينة من MySQL */
+/** جلب صفقات مدينة معينة من MySQL — يُعيد [] عند أي خطأ */
 async function loadTransactionsByCity(city: string): Promise<Transaction[]> {
-  const table = process.env.DB_TABLE ?? "aqar";
-  const [rows] = await pool.query(
-    `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
-     FROM \`${table}\`
-     WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0`,
-    [`%${city}%`]
-  );
-  return (rows as Record<string, unknown>[]).map(rowToTransaction);
+  try {
+    const table = process.env.DB_TABLE ?? "aqar";
+    const [rows] = await pool.query(
+      `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
+       FROM \`${table}\`
+       WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0`,
+      [`%${city}%`]
+    );
+    return (rows as Record<string, unknown>[]).map(rowToTransaction);
+  } catch (err) {
+    console.error("[prices] DB error (city query):", err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
-/** fallback: جلب أقرب 2000 صفقة بدون فلتر مدينة */
+/** fallback: جلب أقرب 2000 صفقة بدون فلتر مدينة — يُعيد [] عند أي خطأ */
 async function loadTransactionsFallback(): Promise<Transaction[]> {
-  const table = process.env.DB_TABLE ?? "aqar";
-  const [rows] = await pool.query(
-    `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
-     FROM \`${table}\`
-     WHERE (price + 0) > 0 AND (area + 0) > 0
-     ORDER BY data_date DESC
-     LIMIT 2000`
-  );
-  return (rows as Record<string, unknown>[]).map(rowToTransaction);
+  try {
+    const table = process.env.DB_TABLE ?? "aqar";
+    const [rows] = await pool.query(
+      `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
+       FROM \`${table}\`
+       WHERE (price + 0) > 0 AND (area + 0) > 0
+       ORDER BY data_date DESC
+       LIMIT 2000`
+    );
+    return (rows as Record<string, unknown>[]).map(rowToTransaction);
+  } catch (err) {
+    console.error("[prices] DB error (fallback query):", err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "lat و lng مطلوبان" }, { status: 400 });
     }
 
-    // اكتشاف المدينة والحي من Nominatim بالتوازي مع تحميل metro/stadium
+    // اكتشاف الموقع + تحميل metro/stadium بالتوازي
     const [location, metroStations, stadiums] = await Promise.all([
       detectLocation(lat, lng),
       Promise.resolve(loadMetroStations()),
@@ -85,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     const detectedDistrict = (userDistrict as string | undefined) ?? location.district;
 
-    // جلب صفقات المدينة المكتشفة فقط — fallback لـ 2000 صفقة عامة إن لم تُكتشف المدينة
+    // جلب صفقات MySQL — أي فشل في DB لا يوقف باقي الحسابات
     let transactions: Transaction[] = [];
     if (location.city) {
       transactions = await loadTransactionsByCity(location.city);
@@ -107,6 +115,6 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[prices] error:", msg);
-    return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار", debug: msg }, { status: 500 });
+    return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار" }, { status: 500 });
   }
 }
