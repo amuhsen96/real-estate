@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { estimatePrice } from "@/lib/priceSimulator";
+import { estimatePrice, detectCityNameFromCoords } from "@/lib/priceSimulator";
 import type { Transaction, MetroStation, Stadium } from "@/lib/priceSimulator";
 import pool, { rowToTransaction } from "@/lib/db";
 
@@ -93,16 +93,19 @@ export async function POST(request: NextRequest) {
 
     const detectedDistrict = (userDistrict as string | undefined) ?? location.district;
 
+    // اكتشاف المدينة: Nominatim أولاً، ثم جغرافياً (CITY_DATA)
+    const cityName = location.city ?? detectCityNameFromCoords(lat, lng);
+
     // جلب صفقات MySQL — أي فشل في DB لا يوقف باقي الحسابات
     let transactions: Transaction[] = [];
-    if (location.city) {
-      transactions = await loadTransactionsByCity(location.city);
+    if (cityName) {
+      transactions = await loadTransactionsByCity(cityName);
     }
     if (transactions.length === 0) {
       transactions = await loadTransactionsFallback();
     }
 
-    console.log(`[prices] lat=${lat} lng=${lng} nominatim_city=${location.city} txLoaded=${transactions.length}`);
+    console.log(`[prices] lat=${lat} lng=${lng} city=${cityName} txLoaded=${transactions.length}`);
 
     const estimate = estimatePrice(
       { lat, lng },

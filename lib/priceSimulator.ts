@@ -127,6 +127,12 @@ function detectCity(coords: Coordinates) {
   return { city: closest, distFromCenter: minDist };
 }
 
+/** يكتشف اسم المدينة من الإحداثيات (للاستخدام في API routes) */
+export function detectCityNameFromCoords(lat: number, lng: number): string | null {
+  const { city } = detectCity({ lat, lng });
+  return city ? city.name : null;
+}
+
 function seededRandom(lat: number, lng: number): number {
   const x = Math.sin(lat * 12.9898 + lng * 78.233) * 43758.5453;
   return x - Math.floor(x);
