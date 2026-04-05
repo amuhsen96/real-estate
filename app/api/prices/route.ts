@@ -102,6 +102,8 @@ export async function POST(request: NextRequest) {
       transactions = await loadTransactionsFallback();
     }
 
+    console.log(`[prices] lat=${lat} lng=${lng} nominatim_city=${location.city} txLoaded=${transactions.length}`);
+
     const estimate = estimatePrice(
       { lat, lng },
       transactions,
@@ -111,6 +113,9 @@ export async function POST(request: NextRequest) {
       stadiums,
       detectedDistrict ?? undefined
     );
+
+    console.log(`[prices] dataSource=${estimate.dataSource} transactionCount=${estimate.transactionCount}`);
+
     return NextResponse.json({ ...estimate, detectedDistrict });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
