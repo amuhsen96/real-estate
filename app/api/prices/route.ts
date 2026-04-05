@@ -104,7 +104,9 @@ export async function POST(request: NextRequest) {
       detectedDistrict ?? undefined
     );
     return NextResponse.json({ ...estimate, detectedDistrict });
-  } catch {
-    return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار" }, { status: 500 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[prices] error:", msg);
+    return NextResponse.json({ error: "حدث خطأ أثناء حساب الأسعار", debug: msg }, { status: 500 });
   }
 }
