@@ -40,14 +40,16 @@ async function detectLocation(lat: number, lng: number): Promise<{ city: string 
   }
 }
 
-/** جلب صفقات مدينة معينة من MySQL — يُعيد [] عند أي خطأ */
+/** جلب صفقات مدينة معينة من MySQL — مع LIMIT لحماية الذاكرة */
 async function loadTransactionsByCity(city: string): Promise<Transaction[]> {
   try {
     const table = process.env.DB_TABLE ?? "aqar";
     const [rows] = await pool.query(
       `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
        FROM \`${table}\`
-       WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0`,
+       WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0
+       ORDER BY data_date DESC
+       LIMIT 8000`,
       [`%${city}%`]
     );
     return (rows as Record<string, unknown>[]).map(rowToTransaction);
@@ -105,8 +107,6 @@ export async function POST(request: NextRequest) {
       transactions = await loadTransactionsFallback();
     }
 
-    console.log(`[prices] lat=${lat} lng=${lng} city=${cityName} txLoaded=${transactions.length}`);
-
     const estimate = estimatePrice(
       { lat, lng },
       transactions,
@@ -116,8 +116,6 @@ export async function POST(request: NextRequest) {
       stadiums,
       detectedDistrict ?? undefined
     );
-
-    console.log(`[prices] dataSource=${estimate.dataSource} transactionCount=${estimate.transactionCount}`);
 
     return NextResponse.json({ ...estimate, detectedDistrict });
   } catch (err) {

@@ -48,12 +48,9 @@ export async function ensureSchema(): Promise<void> {
       `ALTER TABLE \`${table}\` ADD COLUMN source VARCHAR(255) NULL DEFAULT NULL`
     );
   } catch { /* already exists */ }
-  // إضافة index على city لتسريع الاستعلامات
-  try {
-    await pool.query(
-      `CREATE INDEX idx_city ON \`${table}\` (city(100))`
-    );
-  } catch { /* already exists */ }
+  // إضافة indexes لتسريع الاستعلامات
+  try { await pool.query(`CREATE INDEX idx_city ON \`${table}\` (city(100))`); } catch { /* exists */ }
+  try { await pool.query(`CREATE INDEX idx_date ON \`${table}\` (data_date)`); } catch { /* exists */ }
 }
 
 // تنفيذ ensureSchema مرة واحدة عند بدء التشغيل
