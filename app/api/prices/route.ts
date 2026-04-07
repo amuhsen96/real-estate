@@ -40,16 +40,19 @@ async function detectLocation(lat: number, lng: number): Promise<{ city: string 
   }
 }
 
-/** جلب صفقات مدينة معينة من MySQL — مع LIMIT لحماية الذاكرة */
+/** جلب صفقات مدينة معينة من MySQL — آخر 5 سنوات مع LIMIT لحماية الذاكرة */
 async function loadTransactionsByCity(city: string): Promise<Transaction[]> {
   try {
     const table = process.env.DB_TABLE ?? "aqar";
     const [rows] = await pool.query(
       `SELECT ad_no, city, district, property_type, area, price, deal_type, region, data_date, source
        FROM \`${table}\`
-       WHERE city LIKE ? AND (price + 0) > 0 AND (area + 0) > 0
+       WHERE city LIKE ?
+         AND (price + 0) > 0
+         AND (area + 0) > 0
+         AND (data_date IS NULL OR data_date >= DATE_SUB(CURDATE(), INTERVAL 5 YEAR))
        ORDER BY data_date DESC
-       LIMIT 8000`,
+       LIMIT 20000`,
       [`%${city}%`]
     );
     return (rows as Record<string, unknown>[]).map(rowToTransaction);
