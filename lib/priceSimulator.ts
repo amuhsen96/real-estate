@@ -374,7 +374,7 @@ function findNearestItem<T extends { lat: number; lng: number }>(
 }
 
 function buildRouteUrl(from: Coordinates, to: { lat: number; lng: number }): string {
-  return `https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${from.lat},${from.lng};${to.lat},${to.lng}`;
+  return `https://www.google.com/maps/dir/?api=1&origin=${from.lat},${from.lng}&destination=${to.lat},${to.lng}&travelmode=driving`;
 }
 
 // ── الدالة الرئيسية ───────────────────────────────────────────────────────────

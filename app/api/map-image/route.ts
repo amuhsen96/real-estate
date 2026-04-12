@@ -89,6 +89,40 @@ export async function GET(request: NextRequest) {
   const stadLat = p.get("slat") ? parseFloat(p.get("slat")!) : null;
   const stadLng = p.get("slng") ? parseFloat(p.get("slng")!) : null;
 
+  // ── Google Maps Static API (إذا كان المفتاح متوفراً) ───────────────────────
+  const gmKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (gmKey) {
+    try {
+      const gmUrl = new URL("https://maps.googleapis.com/maps/api/staticmap");
+      gmUrl.searchParams.set("center", `${lat},${lng}`);
+      gmUrl.searchParams.set("zoom", "14");
+      gmUrl.searchParams.set("size", "768x400");
+      gmUrl.searchParams.set("maptype", "roadmap");
+      gmUrl.searchParams.set("language", "ar");
+      // markers
+      gmUrl.searchParams.append("markers", `color:red|label:P|${lat},${lng}`);
+      if (metroLat && metroLng)
+        gmUrl.searchParams.append("markers", `color:blue|label:M|${metroLat},${metroLng}`);
+      if (stadLat && stadLng)
+        gmUrl.searchParams.append("markers", `color:green|label:S|${stadLat},${stadLng}`);
+      // path lines
+      if (metroLat && metroLng)
+        gmUrl.searchParams.append("path", `color:0x2563ebaa|weight:2|${lat},${lng}|${metroLat},${metroLng}`);
+      if (stadLat && stadLng)
+        gmUrl.searchParams.append("path", `color:0x16a34aaa|weight:2|${lat},${lng}|${stadLat},${stadLng}`);
+      gmUrl.searchParams.set("key", gmKey);
+
+      const gmRes = await fetch(gmUrl.toString(), { signal: AbortSignal.timeout(8000) });
+      if (gmRes.ok) {
+        const buf = Buffer.from(await gmRes.arrayBuffer());
+        return new NextResponse(buf as unknown as BodyInit, {
+          headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=3600" },
+        });
+      }
+    } catch { /* fallback to OSM below */ }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   const ZOOM = 14;
   const GRID = 3;          // 3×3 tiles
   const TILE_SIZE = 256;

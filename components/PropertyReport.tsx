@@ -377,17 +377,23 @@ export default function PropertyReport({ data, lang, reportRef }: Props) {
   );
 }
 
+/** استخراج الإحداثيات من رابط Google Maps directions */
+function extractDestination(routeUrl: string): { lat: string; lng: string } | null {
+  // صيغة Google Maps: ...&destination=LAT,LNG&...
+  const m = routeUrl.match(/destination=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+  return m ? { lat: m[1], lng: m[2] } : null;
+}
+
 /** بناء رابط صورة الخريطة */
 export function buildMapSrc(coords: Coordinates, estimate: PriceEstimate): string {
   const p = new URLSearchParams({ lat: String(coords.lat), lng: String(coords.lng) });
   if (estimate.nearestMetro) {
-    // OSM route URL format: …;FROM_LAT,FROM_LNG;TO_LAT,TO_LNG
-    const match = estimate.nearestMetro.routeUrl.match(/;(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
-    if (match) { p.set("mlat", match[1]); p.set("mlng", match[2]); }
+    const dest = extractDestination(estimate.nearestMetro.routeUrl);
+    if (dest) { p.set("mlat", dest.lat); p.set("mlng", dest.lng); }
   }
   if (estimate.nearestStadium) {
-    const match = estimate.nearestStadium.routeUrl.match(/;(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
-    if (match) { p.set("slat", match[1]); p.set("slng", match[2]); }
+    const dest = extractDestination(estimate.nearestStadium.routeUrl);
+    if (dest) { p.set("slat", dest.lat); p.set("slng", dest.lng); }
   }
   return `/api/map-image?${p}`;
 }
