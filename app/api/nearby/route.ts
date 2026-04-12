@@ -31,17 +31,18 @@ const CATEGORIES = [
 ];
 
 // ربط كلمات البحث في Apify بمعرّفات الفئات
-const APIFY_CATEGORY_MAP: { query: string; id: string }[] = [
-  { query: "مطاعم وكافيهات",   id: "restaurant" },
-  { query: "مراكز تجارية",     id: "shopping_mall" },
-  { query: "مدارس وجامعات",    id: "school" },
-  { query: "مستشفيات وعيادات", id: "hospital" },
-  { query: "مساجد",             id: "place_of_worship" },
-  { query: "حدائق ومتنزهات",   id: "park" },
-  { query: "بنوك وصرافات",     id: "bank" },
-  { query: "محطات وقود",       id: "gas_station" },
-  { query: "سوبرماركت",         id: "supermarket" },
-  { query: "صيدليات",           id: "pharmacy" },
+// keyword = ما يظهر في حقل searchString بالاستجابة
+const APIFY_CATEGORY_MAP: { keyword: string; id: string }[] = [
+  { keyword: "مطاعم",        id: "restaurant" },
+  { keyword: "مراكز تجارية", id: "shopping_mall" },
+  { keyword: "مدارس",        id: "school" },
+  { keyword: "مستشفيات",     id: "hospital" },
+  { keyword: "مساجد",        id: "place_of_worship" },
+  { keyword: "حدائق",        id: "park" },
+  { keyword: "بنوك",         id: "bank" },
+  { keyword: "محطات وقود",   id: "gas_station" },
+  { keyword: "سوبرماركت",    id: "supermarket" },
+  { keyword: "صيدليات",      id: "pharmacy" },
 ];
 
 const MAX_RADIUS = 5000;
@@ -200,17 +201,18 @@ async function fetchFromApify(lat: number, lng: number): Promise<CategoryResult[
   const token = process.env.APIFY_API_TOKEN;
   if (!token) throw new Error("APIFY_API_TOKEN غير مضبوط في .env.local");
 
-  const searchStringsArray = APIFY_CATEGORY_MAP.map(
-    (c) => `${c.query} بالقرب من ${lat},${lng}`
-  );
+  // نستخدم Google Maps URLs مع الإحداثيات مباشرة للحصول على نتائج دقيقة الموقع
+  const startUrls = APIFY_CATEGORY_MAP.map((c) => ({
+    url: `https://www.google.com/maps/search/${encodeURIComponent(c.keyword)}/@${lat},${lng},14z`,
+  }));
 
   const res = await fetch(
-    `https://api.apify.com/v2/acts/apify~google-maps-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&timeout=90`,
+    `https://api.apify.com/v2/acts/compass~crawler-google-places/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&timeout=120`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        searchStringsArray,
+        startUrls,
         maxCrawledPlacesPerSearch: 10,
         maxImages: 0,
         language: "ar",
@@ -218,7 +220,7 @@ async function fetchFromApify(lat: number, lng: number): Promise<CategoryResult[
         includeOpeningHours: false,
         includePeopleAlsosearch: false,
       }),
-      signal: AbortSignal.timeout(95000),
+      signal: AbortSignal.timeout(125000),
     }
   );
 
@@ -231,9 +233,8 @@ async function fetchFromApify(lat: number, lng: number): Promise<CategoryResult[
 
   for (const item of items) {
     if (!item.searchString) continue;
-    const catEntry = APIFY_CATEGORY_MAP.find((c) =>
-      item.searchString!.startsWith(c.query)
-    );
+    // searchString يحتوي على كلمة البحث (مطاعم, مساجد, ...)
+    const catEntry = APIFY_CATEGORY_MAP.find((c) => item.searchString === c.keyword);
     if (!catEntry) continue;
     const name = item.title ?? "";
     if (!name) continue;
