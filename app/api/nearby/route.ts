@@ -264,6 +264,100 @@ async function fetchFromApify(lat: number, lng: number): Promise<CategoryResult[
   }));
 }
 
+// ─── Outscraper ───────────────────────────────────────────────────────────────
+
+// خريطة الفئات لـ Outscraper — مصطلحات إنجليزية تعطي نتائج أدق من Google Maps
+const OUTSCRAPER_CATEGORY_MAP: { query: string; id: string }[] = [
+  { query: "restaurants",    id: "restaurant" },
+  { query: "shopping mall",  id: "shopping_mall" },
+  { query: "school",         id: "school" },
+  { query: "hospital",       id: "hospital" },
+  { query: "mosque",         id: "place_of_worship" },
+  { query: "park",           id: "park" },
+  { query: "bank",           id: "bank" },
+  { query: "gas station",    id: "gas_station" },
+  { query: "supermarket",    id: "supermarket" },
+  { query: "pharmacy",       id: "pharmacy" },
+];
+
+interface OutscraperPlace {
+  name?: string;
+  full_address?: string;
+  street?: string;
+  latitude?: number;
+  longitude?: number;
+  rating?: number;
+}
+
+interface OutscraperResponse {
+  status?: string;
+  data?: OutscraperPlace[][];
+  error_message?: string;
+}
+
+async function fetchFromOutscraper(lat: number, lng: number): Promise<CategoryResult[]> {
+  const key = process.env.OUTSCRAPER_API_KEY;
+  if (!key) throw new Error("OUTSCRAPER_API_KEY غير مضبوط في .env.local");
+
+  // استعلام واحد لكل الفئات معاً (query متعددة في طلب واحد)
+  const url = new URL("https://api.app.outscraper.com/maps/search-v3");
+  OUTSCRAPER_CATEGORY_MAP.forEach((c) =>
+    url.searchParams.append("query", `${c.query} near ${lat},${lng}`)
+  );
+  url.searchParams.set("limit", "10");
+  url.searchParams.set("language", "ar");
+  url.searchParams.set("region", "SA");
+  url.searchParams.set("async", "false");
+
+  const res = await fetch(url.toString(), {
+    headers: { "X-API-KEY": key },
+    signal: AbortSignal.timeout(60000),
+  });
+
+  if (!res.ok) throw new Error(`Outscraper HTTP ${res.status}: ${await res.text()}`);
+  const body: OutscraperResponse = await res.json();
+
+  if (body.status !== "Success" || !body.data) {
+    throw new Error(body.error_message ?? `Outscraper: status=${body.status}`);
+  }
+
+  const buckets = new Map<string, CategoryResult["places"]>(
+    CATEGORIES.map((c) => [c.id, []])
+  );
+
+  // body.data هو مصفوفة مصفوفات — كل عنصر يقابل query بنفس الترتيب
+  OUTSCRAPER_CATEGORY_MAP.forEach((cat, index) => {
+    const places = body.data![index] ?? [];
+    for (const place of places) {
+      const name = place.name ?? "";
+      if (!name) continue;
+      const plat = place.latitude;
+      const plng = place.longitude;
+      const distance =
+        plat != null && plng != null
+          ? calcDistance(lat, lng, plat, plng)
+          : null;
+
+      buckets.get(cat.id)?.push({
+        name,
+        vicinity: place.full_address ?? place.street ?? "",
+        rating: place.rating ?? null,
+        distance,
+        ...(plat != null && plng != null ? { lat: plat, lng: plng } : {}),
+      });
+    }
+  });
+
+  return CATEGORIES.map((cat) => ({
+    category:   cat.id,
+    categoryAr: cat.ar,
+    icon:       cat.icon,
+    places: (buckets.get(cat.id) ?? [])
+      .sort((a, b) => (a.distance ?? MAX_RADIUS) - (b.distance ?? MAX_RADIUS))
+      .slice(0, 20),
+  }));
+}
+
 // ─── بناء ملخص الفئات ─────────────────────────────────────────────────────────
 
 function buildSummary(results: CategoryResult[]) {
@@ -298,6 +392,17 @@ export async function POST(request: NextRequest) {
       }
       const results = await fetchFromApify(lat, lng);
       return NextResponse.json({ categories: results, summary: buildSummary(results), provider: "apify" });
+    }
+
+    if (provider === "outscraper") {
+      if (!process.env.OUTSCRAPER_API_KEY) {
+        return NextResponse.json(
+          { error: "OUTSCRAPER_API_KEY غير مضبوط — أضفه في .env.local على السيرفر" },
+          { status: 503 }
+        );
+      }
+      const results = await fetchFromOutscraper(lat, lng);
+      return NextResponse.json({ categories: results, summary: buildSummary(results), provider: "outscraper" });
     }
 
     // Overpass (default)

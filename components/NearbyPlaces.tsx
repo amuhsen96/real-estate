@@ -17,13 +17,15 @@ interface Category {
   places: Place[];
 }
 
+type Provider = "overpass" | "apify" | "outscraper";
+
 interface NearbyPlacesProps {
   categories: Category[];
   isLoading: boolean;
-  provider?: "overpass" | "apify";
+  provider?: Provider;
   isProviderLoading?: boolean;
   providerError?: string | null;
-  onProviderChange?: (provider: "overpass" | "apify") => void;
+  onProviderChange?: (provider: Provider) => void;
 }
 
 const ZOOM_LEVELS = [
@@ -31,6 +33,12 @@ const ZOOM_LEVELS = [
   { labelAr: "1.5 كم", labelEn: "1.5 km", value: 1500 },
   { labelAr: "3 كم",   labelEn: "3 km",   value: 3000 },
   { labelAr: "5 كم",   labelEn: "5 km",   value: 5000 },
+];
+
+const PROVIDERS: { id: Provider; labelAr: string; labelEn: string; color: string }[] = [
+  { id: "overpass",    labelAr: "OpenStreetMap", labelEn: "OpenStreetMap", color: "blue" },
+  { id: "apify",       labelAr: "Google (Apify)", labelEn: "Google (Apify)", color: "green" },
+  { id: "outscraper",  labelAr: "Google (Outscraper)", labelEn: "Google (Outscraper)", color: "orange" },
 ];
 
 export default function NearbyPlaces({
@@ -93,42 +101,36 @@ export default function NearbyPlaces({
 
           {/* تبديل المزود */}
           {onProviderChange && (
-            <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1 flex-shrink-0">
-              <button
-                onClick={() => !isProviderLoading && provider !== "overpass" && onProviderChange("overpass")}
-                disabled={isProviderLoading}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  provider === "overpass"
-                    ? "bg-white text-blue-700 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                } ${isProviderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-              >
-                <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                </svg>
-                OpenStreetMap
-              </button>
-              <button
-                onClick={() => !isProviderLoading && provider !== "apify" && onProviderChange("apify")}
-                disabled={isProviderLoading}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  provider === "apify"
-                    ? "bg-white text-green-700 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                } ${isProviderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-              >
-                {isProviderLoading && provider !== "apify" ? (
-                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
-                  </svg>
-                )}
-                Google Maps
-              </button>
+            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 flex-shrink-0 flex-wrap">
+              {PROVIDERS.map((p) => {
+                const isActive = provider === p.id;
+                const isLoading_ = isProviderLoading && !isActive;
+                const colorMap: Record<string, string> = {
+                  blue:   "text-blue-700",
+                  green:  "text-green-700",
+                  orange: "text-orange-600",
+                };
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => !isProviderLoading && !isActive && onProviderChange(p.id)}
+                    disabled={isProviderLoading}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      isActive
+                        ? `bg-white ${colorMap[p.color]} shadow-sm`
+                        : "text-gray-500 hover:text-gray-700"
+                    } ${isProviderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    {isLoading_ ? (
+                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                    ) : null}
+                    {lang === "en" ? p.labelEn : p.labelAr}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -148,6 +150,11 @@ export default function NearbyPlaces({
               <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block" />
                 {lang === "en" ? "Source: Google Maps (Apify)" : "المصدر: Google Maps (Apify)"}
+              </span>
+            ) : provider === "outscraper" ? (
+              <span className="inline-flex items-center gap-1 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-orange-500 rounded-full inline-block" />
+                {lang === "en" ? "Source: Google Maps (Outscraper)" : "المصدر: Google Maps (Outscraper)"}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded-full">

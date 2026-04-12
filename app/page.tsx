@@ -24,11 +24,11 @@ export default function Home() {
   const [error, setError] = useState("");
   const [nearbyData, setNearbyData] = useState<{ category: string; categoryAr: string; icon: string; places: { name: string; vicinity: string; rating: number | null; distance: number | null; lat?: number; lng?: number }[] }[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [nearbyProvider, setNearbyProvider] = useState<"overpass" | "apify">("overpass");
+  const [nearbyProvider, setNearbyProvider] = useState<"overpass" | "apify" | "outscraper">("overpass");
   const [isNearbyProviderLoading, setIsNearbyProviderLoading] = useState(false);
   const [nearbyProviderError, setNearbyProviderError] = useState<string | null>(null);
   // cache: نتائج كل مزود عند الإحداثيات الحالية — التبديل المرة الثانية فوري
-  const nearbyCache = useRef<Partial<Record<"overpass" | "apify", typeof nearbyData>>>({});
+  const nearbyCache = useRef<Partial<Record<"overpass" | "apify" | "outscraper", typeof nearbyData>>>({});
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
@@ -71,7 +71,7 @@ export default function Home() {
     finally { setIsLoading(false); }
   };
 
-  const handleNearbyProviderChange = async (newProvider: "overpass" | "apify") => {
+  const handleNearbyProviderChange = async (newProvider: "overpass" | "apify" | "outscraper") => {
     if (!coordinates || isNearbyProviderLoading) return;
     setNearbyProviderError(null);
 
