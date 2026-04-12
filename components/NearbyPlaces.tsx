@@ -20,6 +20,9 @@ interface Category {
 interface NearbyPlacesProps {
   categories: Category[];
   isLoading: boolean;
+  provider?: "overpass" | "apify";
+  isProviderLoading?: boolean;
+  onProviderChange?: (provider: "overpass" | "apify") => void;
 }
 
 const ZOOM_LEVELS = [
@@ -29,7 +32,13 @@ const ZOOM_LEVELS = [
   { labelAr: "5 كم",   labelEn: "5 km",   value: 5000 },
 ];
 
-export default function NearbyPlaces({ categories, isLoading }: NearbyPlacesProps) {
+export default function NearbyPlaces({
+  categories,
+  isLoading,
+  provider = "overpass",
+  isProviderLoading = false,
+  onProviderChange,
+}: NearbyPlacesProps) {
   const { lang } = useI18n();
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [zoomRadius, setZoomRadius] = useState<number>(5000);
@@ -74,8 +83,78 @@ export default function NearbyPlaces({ categories, isLoading }: NearbyPlacesProp
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-100">
-        <h2 className="text-lg font-bold text-gray-800">{titleText}</h2>
-        <p className="text-sm text-gray-500 mt-0.5">{subtitleText}</p>
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">{titleText}</h2>
+            <p className="text-sm text-gray-500 mt-0.5">{subtitleText}</p>
+          </div>
+
+          {/* تبديل المزود */}
+          {onProviderChange && (
+            <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1 flex-shrink-0">
+              <button
+                onClick={() => !isProviderLoading && provider !== "overpass" && onProviderChange("overpass")}
+                disabled={isProviderLoading}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  provider === "overpass"
+                    ? "bg-white text-blue-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                } ${isProviderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                </svg>
+                OpenStreetMap
+              </button>
+              <button
+                onClick={() => !isProviderLoading && provider !== "apify" && onProviderChange("apify")}
+                disabled={isProviderLoading}
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  provider === "apify"
+                    ? "bg-white text-green-700 shadow-sm"
+                    : "text-gray-500 hover:text-gray-700"
+                } ${isProviderLoading ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+              >
+                {isProviderLoading && provider !== "apify" ? (
+                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+                  </svg>
+                )}
+                Google Maps
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* شارة مصدر البيانات */}
+        {onProviderChange && (
+          <div className="mt-2">
+            {isProviderLoading ? (
+              <span className="inline-flex items-center gap-1 text-xs text-gray-400 bg-gray-50 px-2 py-1 rounded-full">
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+                {lang === "en" ? "Loading from new source…" : "جاري التحميل من المصدر الجديد…"}
+              </span>
+            ) : provider === "apify" ? (
+              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block" />
+                {lang === "en" ? "Source: Google Maps (Apify)" : "المصدر: Google Maps (Apify)"}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full inline-block" />
+                {lang === "en" ? "Source: OpenStreetMap" : "المصدر: OpenStreetMap (Overpass)"}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Radius filter */}
         <div className="flex gap-2 mt-3 flex-wrap">
@@ -95,7 +174,7 @@ export default function NearbyPlaces({ categories, isLoading }: NearbyPlacesProp
         </div>
       </div>
 
-      <div className="divide-y divide-gray-50">
+      <div className={`divide-y divide-gray-50 ${isProviderLoading ? "opacity-40 pointer-events-none" : ""}`}>
         {filteredCategories.map((cat) => (
           <div key={cat.category}>
             <button
@@ -134,6 +213,11 @@ export default function NearbyPlaces({ categories, isLoading }: NearbyPlacesProp
                         {place.distance !== null && (
                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
                             {formatDistance(place.distance)}
+                          </span>
+                        )}
+                        {place.rating !== null && (
+                          <span className="text-xs bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+                            ★ {place.rating.toFixed(1)}
                           </span>
                         )}
                       </div>

@@ -24,6 +24,8 @@ export default function Home() {
   const [error, setError] = useState("");
   const [nearbyData, setNearbyData] = useState<{ category: string; categoryAr: string; icon: string; places: { name: string; vicinity: string; rating: number | null; distance: number | null; lat?: number; lng?: number }[] }[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyProvider, setNearbyProvider] = useState<"overpass" | "apify">("overpass");
+  const [isNearbyProviderLoading, setIsNearbyProviderLoading] = useState(false);
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
@@ -31,6 +33,7 @@ export default function Home() {
     setIsLoading(true);
     setNearbyLoading(true);
     setNearbyData([]);
+    setNearbyProvider("overpass");
     setError("");
     setPriceEstimate(null);
     setDetectedDistrict(null);
@@ -39,7 +42,7 @@ export default function Home() {
     fetch("/api/nearby", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lat: params.lat, lng: params.lng }),
+      body: JSON.stringify({ lat: params.lat, lng: params.lng, provider: "overpass" }),
     })
       .then((r) => r.json())
       .then((d) => { if (d.categories) setNearbyData(d.categories); })
@@ -57,6 +60,22 @@ export default function Home() {
       setDetectedDistrict(params.district ?? params.placeName ?? autoDistrict ?? null);
     } catch { setError("Connection error."); }
     finally { setIsLoading(false); }
+  };
+
+  const handleNearbyProviderChange = async (newProvider: "overpass" | "apify") => {
+    if (!coordinates || isNearbyProviderLoading) return;
+    setIsNearbyProviderLoading(true);
+    try {
+      const res = await fetch("/api/nearby", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat: coordinates.lat, lng: coordinates.lng, provider: newProvider }),
+      });
+      const d = await res.json();
+      if (d.error) { console.error("[nearby provider switch]", d.error); }
+      else if (d.categories) { setNearbyData(d.categories); setNearbyProvider(newProvider); }
+    } catch { /* silent */ }
+    finally { setIsNearbyProviderLoading(false); }
   };
 
   // حساب النقاط النهائية لتضمينها في التقرير
@@ -100,7 +119,13 @@ export default function Home() {
         {coordinates && (
           <div className="space-y-6">
             <SatelliteView coordinates={coordinates} />
-            <NearbyPlaces categories={nearbyData} isLoading={nearbyLoading} />
+            <NearbyPlaces
+              categories={nearbyData}
+              isLoading={nearbyLoading}
+              provider={nearbyProvider}
+              isProviderLoading={isNearbyProviderLoading}
+              onProviderChange={handleNearbyProviderChange}
+            />
             <TransportInfo estimate={priceEstimate} />
             <PriceEstimate estimate={priceEstimate} isLoading={isLoading} detectedDistrict={detectedDistrict} nearbyCategories={nearbyData} nearbyLoading={nearbyLoading} />
             {priceEstimate && !isLoading && reportData && (
