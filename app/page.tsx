@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
@@ -27,6 +27,8 @@ export default function Home() {
   const [nearbyProvider, setNearbyProvider] = useState<"overpass" | "apify">("overpass");
   const [isNearbyProviderLoading, setIsNearbyProviderLoading] = useState(false);
   const [nearbyProviderError, setNearbyProviderError] = useState<string | null>(null);
+  // cache: نتائج كل مزود عند الإحداثيات الحالية — التبديل المرة الثانية فوري
+  const nearbyCache = useRef<Partial<Record<"overpass" | "apify", typeof nearbyData>>>({});
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
@@ -35,6 +37,7 @@ export default function Home() {
     setNearbyLoading(true);
     setNearbyData([]);
     setNearbyProvider("overpass");
+    nearbyCache.current = {};   // مسح الـ cache عند كل موقع جديد
     setError("");
     setPriceEstimate(null);
     setDetectedDistrict(null);
@@ -46,7 +49,12 @@ export default function Home() {
       body: JSON.stringify({ lat: params.lat, lng: params.lng, provider: "overpass" }),
     })
       .then((r) => r.json())
-      .then((d) => { if (d.categories) setNearbyData(d.categories); })
+      .then((d) => {
+        if (d.categories) {
+          nearbyCache.current.overpass = d.categories;  // حفظ في الـ cache
+          setNearbyData(d.categories);
+        }
+      })
       .catch(() => {})
       .finally(() => setNearbyLoading(false));
     try {
@@ -65,8 +73,18 @@ export default function Home() {
 
   const handleNearbyProviderChange = async (newProvider: "overpass" | "apify") => {
     if (!coordinates || isNearbyProviderLoading) return;
-    setIsNearbyProviderLoading(true);
     setNearbyProviderError(null);
+
+    // إذا كانت النتائج محفوظة → تبديل فوري بدون API call
+    const cached = nearbyCache.current[newProvider];
+    if (cached) {
+      setNearbyData(cached);
+      setNearbyProvider(newProvider);
+      return;
+    }
+
+    // أول مرة → جلب من الـ API ثم حفظ في الـ cache
+    setIsNearbyProviderLoading(true);
     try {
       const res = await fetch("/api/nearby", {
         method: "POST",
@@ -77,6 +95,7 @@ export default function Home() {
       if (d.error) {
         setNearbyProviderError(d.error);
       } else if (d.categories) {
+        nearbyCache.current[newProvider] = d.categories;  // حفظ في الـ cache
         setNearbyData(d.categories);
         setNearbyProvider(newProvider);
       }
