@@ -26,6 +26,7 @@ export default function Home() {
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyProvider, setNearbyProvider] = useState<"overpass" | "apify">("overpass");
   const [isNearbyProviderLoading, setIsNearbyProviderLoading] = useState(false);
+  const [nearbyProviderError, setNearbyProviderError] = useState<string | null>(null);
 
   const handleSearch = async (params: SearchParams) => {
     setCoordinates({ lat: params.lat, lng: params.lng });
@@ -65,6 +66,7 @@ export default function Home() {
   const handleNearbyProviderChange = async (newProvider: "overpass" | "apify") => {
     if (!coordinates || isNearbyProviderLoading) return;
     setIsNearbyProviderLoading(true);
+    setNearbyProviderError(null);
     try {
       const res = await fetch("/api/nearby", {
         method: "POST",
@@ -72,9 +74,15 @@ export default function Home() {
         body: JSON.stringify({ lat: coordinates.lat, lng: coordinates.lng, provider: newProvider }),
       });
       const d = await res.json();
-      if (d.error) { console.error("[nearby provider switch]", d.error); }
-      else if (d.categories) { setNearbyData(d.categories); setNearbyProvider(newProvider); }
-    } catch { /* silent */ }
+      if (d.error) {
+        setNearbyProviderError(d.error);
+      } else if (d.categories) {
+        setNearbyData(d.categories);
+        setNearbyProvider(newProvider);
+      }
+    } catch {
+      setNearbyProviderError("تعذّر الاتصال بالمزود — حاول مجدداً");
+    }
     finally { setIsNearbyProviderLoading(false); }
   };
 
@@ -124,6 +132,7 @@ export default function Home() {
               isLoading={nearbyLoading}
               provider={nearbyProvider}
               isProviderLoading={isNearbyProviderLoading}
+              providerError={nearbyProviderError}
               onProviderChange={handleNearbyProviderChange}
             />
             <TransportInfo estimate={priceEstimate} />

@@ -10,6 +10,7 @@ interface SatelliteViewProps {
 export default function SatelliteView({ coordinates }: SatelliteViewProps) {
   const { t } = useI18n();
   const { lat, lng } = coordinates;
+
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-100">
@@ -17,11 +18,21 @@ export default function SatelliteView({ coordinates }: SatelliteViewProps) {
         <p className="text-sm text-gray-500 mt-1" dir="ltr">{lat.toFixed(6)}, {lng.toFixed(6)}</p>
       </div>
       <div className="relative">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/api/satellite?lat=${lat}&lng=${lng}`} alt={t("aerialTitle")}
-          className="w-full h-auto min-h-[300px] object-cover bg-gray-100" loading="eager" />
-        <a href={`https://www.openstreetmap.org/#map=17/${lat}/${lng}`} target="_blank" rel="noopener noreferrer"
-          className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg shadow transition-colors">
+        <iframe
+          title="Google Maps"
+          src={`https://maps.google.com/maps?q=${lat},${lng}&z=17&t=h&output=embed&hl=ar`}
+          width="100%"
+          height="320"
+          style={{ border: "none", display: "block" }}
+          loading="eager"
+          allowFullScreen
+        />
+        <a
+          href={`https://www.google.com/maps?q=${lat},${lng}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg shadow transition-colors"
+        >
           {t("openInMaps")}
         </a>
       </div>
