@@ -120,7 +120,27 @@ export async function POST(request: NextRequest) {
       detectedDistrict ?? undefined
     );
 
-    return NextResponse.json({ ...estimate, detectedDistrict });
+    // أقرب 10 صفقات مرجعية للعرض (نفس المدينة، مرتّبة بالتاريخ)
+    const refTransactions = transactions
+      .filter((t) => t.pricePerSqm > 0)
+      .sort((a, b) => {
+        // أولوية: نفس النوع + أحدث تاريخ
+        const typeMatch = (x: typeof a) =>
+          propertyType ? (x.propertyType === propertyType ? 1 : 0) : 0;
+        return typeMatch(b) - typeMatch(a) ||
+          (b.date ?? "").localeCompare(a.date ?? "");
+      })
+      .slice(0, 10)
+      .map((t) => ({
+        district: t.district,
+        propertyType: t.propertyType,
+        area: t.area,
+        pricePerSqm: t.pricePerSqm,
+        date: t.date ?? null,
+        source: t.source ?? null,
+      }));
+
+    return NextResponse.json({ ...estimate, detectedDistrict, refTransactions });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[prices] error:", msg);
