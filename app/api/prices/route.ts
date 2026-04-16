@@ -120,25 +120,45 @@ export async function POST(request: NextRequest) {
       detectedDistrict ?? undefined
     );
 
-    // أقرب 10 صفقات مرجعية للعرض (نفس المدينة، مرتّبة بالتاريخ)
-    const refTransactions = transactions
-      .filter((t) => t.pricePerSqm > 0)
-      .sort((a, b) => {
-        // أولوية: نفس النوع + أحدث تاريخ
-        const typeMatch = (x: typeof a) =>
-          propertyType ? (x.propertyType === propertyType ? 1 : 0) : 0;
-        return typeMatch(b) - typeMatch(a) ||
-          (b.date ?? "").localeCompare(a.date ?? "");
-      })
-      .slice(0, 10)
-      .map((t) => ({
-        district: t.district,
-        propertyType: t.propertyType,
-        area: t.area,
-        pricePerSqm: t.pricePerSqm,
-        date: t.date ?? null,
-        source: t.source ?? null,
-      }));
+    // الصفقات المرجعية: نفس الحي + نفس النوع أولاً، ثم fallback تدريجي
+    const byDistrictAndType = transactions.filter(
+      (t) => t.pricePerSqm > 0 &&
+        detectedDistrict && t.district === detectedDistrict &&
+        propertyType && t.propertyType === propertyType
+    ).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+    const byDistrict = transactions.filter(
+      (t) => t.pricePerSqm > 0 &&
+        detectedDistrict && t.district === detectedDistrict &&
+        !(propertyType && t.propertyType === propertyType) // لا تكرر ما فوق
+    ).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+    const byTypeOnly = transactions.filter(
+      (t) => t.pricePerSqm > 0 &&
+        !(detectedDistrict && t.district === detectedDistrict) && // لا تكرر ما فوق
+        propertyType && t.propertyType === propertyType
+    ).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+    // دمج بالأولوية: حي+نوع → حي فقط → نوع فقط → الكل
+    const merged = [
+      ...byDistrictAndType,
+      ...byDistrict,
+      ...byTypeOnly,
+      ...transactions.filter(
+        (t) => t.pricePerSqm > 0 &&
+          !(detectedDistrict && t.district === detectedDistrict) &&
+          !(propertyType && t.propertyType === propertyType)
+      ).sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
+    ];
+
+    const refTransactions = merged.slice(0, 10).map((t) => ({
+      district: t.district,
+      propertyType: t.propertyType,
+      area: t.area,
+      pricePerSqm: t.pricePerSqm,
+      date: t.date ?? null,
+      source: t.source ?? null,
+    }));
 
     return NextResponse.json({ ...estimate, detectedDistrict, refTransactions });
   } catch (err) {
