@@ -14,6 +14,8 @@ interface DistrictPoint {
 interface Props {
   city: string;
   dealType?: string;
+  /** عرض الخريطة مباشرة بدون accordion */
+  alwaysOpen?: boolean;
 }
 
 const LEAFLET_CDN = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
@@ -24,7 +26,6 @@ function loadLeaflet(): Promise<typeof import("leaflet")> {
   const w = window as any;
   if (w.L) return Promise.resolve(w.L);
 
-  // Load CSS once
   if (!document.querySelector(`link[href="${LEAFLET_CSS}"]`)) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -48,11 +49,9 @@ function loadLeaflet(): Promise<typeof import("leaflet")> {
   });
 }
 
-/** Map avg_sqm to a color between green (low) → yellow (mid) → red (high) */
 function priceColor(value: number, min: number, max: number): string {
   const range = max - min || 1;
   const t = Math.max(0, Math.min(1, (value - min) / range));
-  // green → yellow → red
   if (t < 0.5) {
     const r = Math.round(t * 2 * 255);
     return `rgb(${r},200,50)`;
@@ -64,10 +63,10 @@ function priceColor(value: number, min: number, max: number): string {
 
 function circleRadius(cnt: number, maxCnt: number): number {
   const t = Math.min(1, cnt / maxCnt);
-  return 400 + t * 900; // 400m – 1300m
+  return 400 + t * 900;
 }
 
-export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
+export default function PriceHeatmap({ city, dealType = "بيع", alwaysOpen = false }: Props) {
   const { lang } = useI18n();
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,13 +76,13 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
   const [error, setError] = useState(false);
   const [open, setOpen] = useState(false);
 
-  // Fetch data once city changes
+  const isVisible = alwaysOpen || open;
+
   useEffect(() => {
     if (!city) return;
     setLoading(true);
     setError(false);
     setData([]);
-    // Destroy old map if city changes
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
       mapInstanceRef.current = null;
@@ -91,10 +90,7 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
     const p = new URLSearchParams({ city, dealType });
     fetch(`/api/heatmap?${p}`)
       .then((r) => r.json())
-      .then((d) => {
-        if (d.data && d.data.length > 0) setData(d.data);
-        else setError(false); // empty but not an error
-      })
+      .then((d) => { if (d.data && d.data.length > 0) setData(d.data); })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [city, dealType]);
@@ -105,7 +101,6 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
     const L = await loadLeaflet();
     if (!mapRef.current) return;
 
-    // Center on average of all points
     const avgLat = data.reduce((s, d) => s + d.lat, 0) / data.length;
     const avgLng = data.reduce((s, d) => s + d.lng, 0) / data.length;
 
@@ -142,6 +137,7 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
     });
 
     // Legend
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const legend = (L as any).control({ position: "bottomright" });
     legend.onAdd = () => {
       const div = L.DomUtil.create("div", "");
@@ -160,21 +156,56 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
   }, [data, lang]);
 
   useEffect(() => {
-    if (open && data.length > 0) {
-      // Small delay to ensure the container is visible before initialising
+    if (isVisible && data.length > 0) {
       setTimeout(() => initMap(), 50);
     }
     return () => {
-      if (!open && mapInstanceRef.current) {
+      if (!isVisible && mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
-  }, [open, data, initMap]);
+  }, [isVisible, data, initMap]);
 
-  const titleText = lang === "en" ? "Price Heat Map by District" : "خريطة أسعار الأحياء";
-  const subText = lang === "en" ? `City: ${city}` : `المدينة: ${city}`;
+  const mapContent = (
+    <>
+      {loading ? (
+        <div className="h-64 flex flex-col items-center justify-center gap-3">
+          <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <p className="text-sm text-gray-400">
+            {lang === "en" ? "Loading district data & geocoding…" : "جاري تحميل بيانات الأحياء وتحديد المواقع..."}
+          </p>
+          <p className="text-xs text-gray-300">
+            {lang === "en" ? "This may take 20–30 seconds" : "قد يستغرق 20-30 ثانية"}
+          </p>
+        </div>
+      ) : error ? (
+        <div className="h-32 flex items-center justify-center text-sm text-gray-400">
+          {lang === "en" ? "Could not load heatmap data" : "تعذّر تحميل بيانات الخريطة"}
+        </div>
+      ) : data.length === 0 ? (
+        <div className="h-32 flex items-center justify-center text-sm text-gray-400">
+          {lang === "en" ? "No district data available for this city" : "لا توجد بيانات أحياء كافية لهذه المدينة"}
+        </div>
+      ) : (
+        <>
+          <div ref={mapRef} style={{ height: alwaysOpen ? "500px" : "420px", width: "100%" }} />
+          <div className="px-6 py-3 border-t border-gray-100">
+            <p className="text-xs text-gray-400">
+              {data.length} {lang === "en" ? "districts" : "حي"} · {lang === "en" ? "Circle size = transaction volume" : "حجم الدائرة = حجم الصفقات"} · {lang === "en" ? "Click a circle for details" : "انقر على دائرة للتفاصيل"}
+            </p>
+          </div>
+        </>
+      )}
+    </>
+  );
 
+  // وضع alwaysOpen: لا accordion، الخريطة مباشرة
+  if (alwaysOpen) {
+    return <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">{mapContent}</div>;
+  }
+
+  // وضع accordion (للصفحة الرئيسية)
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
       <button
@@ -184,8 +215,12 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
         <div className="flex items-center gap-3">
           <span className="text-2xl">🗺️</span>
           <div className="text-right">
-            <span className="font-bold text-gray-800">{titleText}</span>
-            <p className="text-xs text-gray-400 mt-0.5">{subText}</p>
+            <span className="font-bold text-gray-800">
+              {lang === "en" ? "Price Heat Map by District" : "خريطة أسعار الأحياء"}
+            </span>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {lang === "en" ? `City: ${city}` : `المدينة: ${city}`}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -198,36 +233,7 @@ export default function PriceHeatmap({ city, dealType = "بيع" }: Props) {
           </svg>
         </div>
       </button>
-
-      {open && (
-        <div>
-          {loading ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-3">
-              <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full" />
-              <p className="text-xs text-gray-400">
-                {lang === "en" ? "Loading district data & geocoding…" : "جاري تحميل بيانات الأحياء..."}
-              </p>
-            </div>
-          ) : error ? (
-            <div className="h-32 flex items-center justify-center text-sm text-gray-400">
-              {lang === "en" ? "Could not load heatmap data" : "تعذّر تحميل بيانات الخريطة"}
-            </div>
-          ) : data.length === 0 ? (
-            <div className="h-32 flex items-center justify-center text-sm text-gray-400">
-              {lang === "en" ? "No district data available for this city" : "لا توجد بيانات أحياء كافية لهذه المدينة"}
-            </div>
-          ) : (
-            <>
-              <div ref={mapRef} style={{ height: "420px", width: "100%" }} />
-              <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
-                <p className="text-xs text-gray-400">
-                  {data.length} {lang === "en" ? "districts shown" : "حي معروض"} · {lang === "en" ? "Circle size = transaction volume" : "حجم الدائرة = حجم الصفقات"}
-                </p>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {open && <div>{mapContent}</div>}
     </div>
   );
 }

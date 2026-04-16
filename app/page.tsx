@@ -16,7 +16,6 @@ import CompareView from "@/components/CompareView";
 import ShareButton from "@/components/ShareButton";
 import ListingAnalyzer from "@/components/ListingAnalyzer";
 import AIInsights from "@/components/AIInsights";
-import PriceHeatmap from "@/components/PriceHeatmap";
 import type { ReportData } from "@/components/PropertyReport";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
@@ -190,10 +189,13 @@ export default function Home() {
       <div className="max-w-2xl mx-auto space-y-6">
 
         {/* شريط التنقل */}
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-2 flex-wrap">
           <LanguageToggle />
           <Link href="/analyze" className="text-xs bg-white border border-gray-200 text-gray-600 hover:text-green-600 hover:border-green-300 px-4 py-2 rounded-full shadow-sm transition-colors">
             {t("navAnalyze")}
+          </Link>
+          <Link href="/heatmap" className="text-xs bg-white border border-gray-200 text-gray-600 hover:text-orange-600 hover:border-orange-300 px-4 py-2 rounded-full shadow-sm transition-colors">
+            {lang === "en" ? "🗺️ Heat Map" : "🗺️ خريطة الأسعار"}
           </Link>
           <Link href="/data" className="text-xs bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-300 px-4 py-2 rounded-full shadow-sm transition-colors">
             {t("navData")}
@@ -222,11 +224,6 @@ export default function Home() {
                 dealType="بيع"
                 currentPrice={priceEstimate.pricePerSqmSale}
               />
-            )}
-
-            {/* ── خريطة حرارية للأسعار ── */}
-            {priceEstimate && !isLoading && detectedCity && (
-              <PriceHeatmap city={detectedCity} dealType="بيع" />
             )}
 
             {/* ── حاسبة الاستثمار والرهن ── */}
