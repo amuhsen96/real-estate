@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import LocationInput, { type SearchParams } from "@/components/LocationInput";
 import SatelliteView from "@/components/SatelliteView";
@@ -13,6 +13,10 @@ import PriceTrend from "@/components/PriceTrend";
 import InvestmentCalc from "@/components/InvestmentCalc";
 import RefTransactions from "@/components/RefTransactions";
 import CompareView from "@/components/CompareView";
+import ShareButton from "@/components/ShareButton";
+import ListingAnalyzer from "@/components/ListingAnalyzer";
+import AIInsights from "@/components/AIInsights";
+import PriceHeatmap from "@/components/PriceHeatmap";
 import type { ReportData } from "@/components/PropertyReport";
 import type { Coordinates } from "@/lib/parseGoogleMapsUrl";
 import type { PriceEstimate as PriceEstimateType } from "@/lib/priceSimulator";
@@ -51,6 +55,17 @@ export default function Home() {
   const [compareDistrict, setCompareDistrict]     = useState<string | null>(null);
   const [compareLoading, setCompareLoading]       = useState(false);
   const [compareError, setCompareError]           = useState("");
+
+  // ── تحميل من رابط المشاركة ────────────────────────────────────────────────
+  useEffect(() => {
+    const encoded = new URLSearchParams(window.location.search).get("share");
+    if (!encoded) return;
+    try {
+      const params = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+      if (params.lat && params.lng) handleSearch(params);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── البحث الرئيسي ──────────────────────────────────────────────────────────
   const handleSearch = async (params: SearchParams) => {
@@ -209,11 +224,26 @@ export default function Home() {
               />
             )}
 
+            {/* ── خريطة حرارية للأسعار ── */}
+            {priceEstimate && !isLoading && detectedCity && (
+              <PriceHeatmap city={detectedCity} dealType="بيع" />
+            )}
+
             {/* ── حاسبة الاستثمار والرهن ── */}
             {priceEstimate && !isLoading && (
               <InvestmentCalc
                 pricePerSqm={priceEstimate.pricePerSqmSale}
                 area={searchParams?.area}
+              />
+            )}
+
+            {/* ── تحليل ذكي ── */}
+            {priceEstimate && !isLoading && (
+              <AIInsights
+                estimate={priceEstimate}
+                district={detectedDistrict}
+                city={detectedCity}
+                nearbyCategories={nearbyData}
               />
             )}
 
@@ -262,7 +292,7 @@ export default function Home() {
               />
             )}
 
-            {/* ── تصدير PDF ── */}
+            {/* ── تصدير PDF + مشاركة ── */}
             {priceEstimate && !isLoading && reportData && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
                 <p className="text-sm font-semibold text-gray-700 mb-1">{t("exportTitle")}</p>
@@ -271,11 +301,26 @@ export default function Home() {
                     ? (lang === "en" ? "Loading nearby services…" : "جاري تحميل الأنشطة القريبة...")
                     : t("exportSubtitle")}
                 </p>
-                <ExportPDFButtons reportData={reportData} disabled={nearbyLoading} />
+                <div className="flex flex-wrap gap-2 items-center">
+                  <ExportPDFButtons reportData={reportData} disabled={nearbyLoading} />
+                  <ShareButton
+                    lat={coordinates!.lat}
+                    lng={coordinates!.lng}
+                    propertyType={searchParams?.propertyType}
+                    area={searchParams?.area}
+                    district={detectedDistrict ?? searchParams?.district}
+                  />
+                </div>
               </div>
             )}
           </div>
         )}
+
+        {/* ── تحليل إعلان من Aqar/Bayut ── */}
+        <ListingAnalyzer
+          onAnalyzeLocation={handleSearch}
+          currentEstimate={priceEstimate ?? undefined}
+        />
 
         <footer className="text-center text-xs text-gray-400 py-4">
           <p>{t("appTitle")}</p>
