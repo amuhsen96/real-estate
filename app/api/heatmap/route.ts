@@ -72,11 +72,11 @@ export async function GET(request: NextRequest) {
     const [rows] = await pool.query(
       `SELECT district,
               COUNT(*) AS cnt,
-              ROUND(AVG(price / NULLIF(area, 0))) AS avg_sqm
+              ROUND(AVG((price + 0) / NULLIF((area + 0), 0))) AS avg_sqm
        FROM \`${table}\`
        WHERE city LIKE ?
          AND district IS NOT NULL AND district != ''
-         AND price > 0 AND area > 0 AND area < 50000
+         AND (price + 0) > 0 AND (area + 0) > 0 AND (area + 0) < 50000
          AND (? = '' OR deal_type = ?)
        GROUP BY district
        HAVING cnt >= 5
